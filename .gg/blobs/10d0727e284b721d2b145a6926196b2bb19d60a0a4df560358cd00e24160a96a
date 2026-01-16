@@ -1,0 +1,187 @@
+import sys
+import re
+import numpy as np
+import pandas as pd
+
+from PySide6.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QPushButton, QFileDialog,
+    QHBoxLayout, QCheckBox, QGridLayout, QGroupBox
+)
+import pyqtgraph as pg
+
+
+class FreqAmpPlotWidget(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        main_layout = QVBoxLayout(self)
+
+        # -------------------------
+        # PlotWidget (LEFT axis)
+        # -------------------------
+        self.plot = pg.PlotWidget(background="w")
+        self.plot.showGrid(x=True, y=True, alpha=0.3)
+        self.plot.setLabel("bottom", "Time (s)")
+        self.plot.setLabel("left", "RPM")
+        self.plot.showAxis("right")
+
+        main_layout.addWidget(self.plot)
+
+        # Legend
+        self.legend = self.plot.addLegend()
+
+        # -------------------------
+        # Right ViewBox (AMP)
+        # -------------------------
+        self.vb_right = pg.ViewBox()
+        self.plot.scene().addItem(self.vb_right)
+        self.plot.getAxis("right").linkToView(self.vb_right)
+        self.vb_right.setXLink(self.plot)
+        self.plot.getAxis("right").setLabel("Amplitude")
+
+        self.plot.getViewBox().sigResized.connect(self._update_views)
+
+        # -------------------------
+        # Checkbox group
+        # -------------------------
+        self.cb_group = QGroupBox("Signal Visibility")
+        self.cb_layout = QGridLayout(self.cb_group)
+        main_layout.addWidget(self.cb_group)
+
+        self.checkboxes = {}
+
+        # -------------------------
+        # Load button
+        # -------------------------
+        btn_layout = QHBoxLayout()
+        self.btn_load = QPushButton("Load Freq-Amp Data")
+        self.btn_load.clicked.connect(self.load_file)
+        btn_layout.addWidget(self.btn_load)
+        main_layout.addLayout(btn_layout)
+
+        # -------------------------
+        # Curve containers
+        # -------------------------
+        self.curves_left = {}    # RPM
+        self.curves_right = {}   # AMP
+
+    # --------------------------------------------------
+    def _update_views(self):
+        self.vb_right.setGeometry(
+            self.plot.getViewBox().sceneBoundingRect()
+        )
+
+    # --------------------------------------------------
+    def load_file(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Load dat", "", "*.dat")
+        if not path:
+            return
+
+        df = self._parse_dat(path)
+        self._create_checkboxes(df.columns)
+        self._plot_data(df)
+
+    # --------------------------------------------------
+    def _parse_dat(self, path):
+        with open(path, "r", errors="ignore") as f:
+            lines = f.readlines()
+
+        var_line = next(l for l in lines if "VARIABLES" in l)
+        cols = re.findall(r'"(.*?)"', var_line)
+
+        data = []
+        for l in lines:
+            if re.match(r"\s*\d", l):
+                vals = l.split()
+                if len(vals) == len(cols):
+                    data.append([float(v) for v in vals])
+
+        return pd.DataFrame(data, columns=cols)
+
+    # --------------------------------------------------
+    def _create_checkboxes(self, columns):
+        for i in reversed(range(self.cb_layout.count())):
+            self.cb_layout.itemAt(i).widget().deleteLater()
+
+        self.checkboxes.clear()
+
+        row = col = 0
+        for name in columns:
+            if name == "Time":
+                continue
+
+            cb = QCheckBox(name)
+            cb.setChecked(True)
+            cb.stateChanged.connect(self._update_visibility)
+
+            self.checkboxes[name] = cb
+            self.cb_layout.addWidget(cb, row, col)
+
+            col += 1
+            if col == 4:
+                col = 0
+                row += 1
+
+    # --------------------------------------------------
+    def _plot_data(self, df):
+        self.plot.clear()
+        self.legend = self.plot.addLegend()
+        self.vb_right.clear()
+
+        self.curves_left.clear()
+        self.curves_right.clear()
+
+        t = df["Time"].values
+
+        # -------------------------
+        # RPM → LEFT axis
+        # -------------------------
+        rpm = df[df.columns[1]].values
+        rpm_curve = self.plot.plot(
+            t, rpm,
+            pen=pg.mkPen("black", width=3),
+            name="RPM"
+        )
+        self.curves_left["RPM"] = rpm_curve
+
+        self.plot.setYRange(rpm.min(), rpm.max())
+
+        # -------------------------
+        # AMP → RIGHT axis (REAL VALUES)
+        # -------------------------
+        amp_cols = df.columns[2:]
+        colors = ["red", "green", "blue", "cyan", "magenta", "orange", "purple"]
+
+        amp_min = df[amp_cols].values.min()
+        amp_max = df[amp_cols].values.max()
+        self.vb_right.setYRange(amp_min, amp_max)
+
+        for i, col in enumerate(amp_cols):
+            curve = pg.PlotCurveItem(
+                t,
+                df[col].values,
+                pen=pg.mkPen(colors[i % len(colors)], width=1)
+            )
+
+            self.vb_right.addItem(curve)
+            self.legend.addItem(curve, col)
+            self.curves_right[col] = curve
+
+        self._update_views()
+
+    # --------------------------------------------------
+    def _update_visibility(self):
+        for name, cb in self.checkboxes.items():
+            if name in self.curves_left:
+                self.curves_left[name].setVisible(cb.isChecked())
+            if name in self.curves_right:
+                self.curves_right[name].setVisible(cb.isChecked())
+
+
+# ======================================================
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    w = FreqAmpPlotWidget()
+    w.resize(1500, 900)
+    w.show()
+    sys.exit(app.exec())

@@ -1,0 +1,331 @@
+from pathlib import Path
+from typing import Dict, Iterable, Union, List
+
+from .api import FoamDict
+
+
+Route = Union[str, List[str]]
+
+
+class ExternalChangeError(RuntimeError):
+    pass
+
+
+class FoamCase:
+    COMPOUND_TYPES = {
+        "uniform",
+        "nonuniform",
+        "table",
+        "coded",
+    }
+
+    def __init__(self, root: str | Path):
+        self.root = Path(root).resolve()
+
+        self.files: Dict[str, Path] = {}
+        self._cache: Dict[str, FoamDict] = {}
+
+        if self.root.exists():
+            self.update()
+
+    def keys(self) -> Iterable[str]:
+        return self.files.keys()
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.files
+
+    def __getitem__(self, key: str) -> FoamDict:
+        path = self.files[key]
+
+        if key not in self._cache:
+            self._cache[key] = FoamDict(path)
+
+        return self._cache[key]
+
+    def _parse_route(self, route: Route) -> List[str]:
+        if isinstance(route, str):
+            if not route:
+                return []
+            return route.split(".")
+        return list(route)
+
+    def is_changed_on_disk(self, file_key: str) -> bool:
+        if file_key not in self._cache:
+            return False
+        return self._cache[file_key].file_changed_on_disk()
+
+    def changed_files_on_disk(self) -> List[str]:
+        return [
+            key for key, fd in self._cache.items()
+            if fd.file_changed_on_disk()
+        ]
+
+    def _unwrap_compound(self, fd: FoamDict, node, compound_type=None):
+        if node is None:
+            return None
+
+        if hasattr(node, "parts") and len(node.parts) >= 2:
+            head_node = node.parts[0]
+            body_node = node.parts[1]
+
+            if hasattr(head_node, "value"):
+                val = head_node.value
+                if isinstance(val, list) and len(val) == 1:
+                    head = val[0]
+                    if (
+                            isinstance(head, str)
+                            and (compound_type is None or head == compound_type)
+                    ):
+                        return fd.editor._unwrap(body_node)
+
+        if hasattr(node, "value"):
+            val = node.value
+            if isinstance(val, list) and len(val) >= 2:
+                head = val[0]
+                body = val[1]
+                if (
+                        isinstance(head, str)
+                        and (compound_type is None or head == compound_type)
+                ):
+                    if isinstance(body, (list, tuple)):
+                        return body
+                    return fd.editor._unwrap(body)
+
+        if hasattr(node, "items"):
+            for item in node.items:
+                if hasattr(item, "head"):
+                    head = item.head
+                    if compound_type is None or head == compound_type:
+                        return fd.editor._unwrap(item.body)
+
+        return None
+
+    def has_value(self, file_key: str, route: Route) -> bool:
+        route = self._parse_route(route)
+        fd = self[file_key]
+
+        if not fd._parsed:
+            fd.update()
+
+        return fd.editor.get_node(route) is not None
+
+    def get_value(
+            self,
+            file_key,
+            route,
+            default=None,
+            *,
+            compound=False,
+            compound_type=None,
+            numeric=False
+    ):
+        route = self._parse_route(route)
+        fd = self[file_key]
+
+        if not compound:
+            val = fd.get(route, default=default)
+            if numeric:
+                return self._to_number(val)
+            return val
+
+        if not fd._parsed:
+            fd.update()
+
+        node = fd.editor.get_node(route)
+        value = self._unwrap_compound(fd, node, compound_type)
+
+        if value is None:
+            return default
+
+        if numeric:
+            if isinstance(value, list):
+                return self._convert_table_to_numbers(value)
+            return self._to_number(value)
+
+        return value
+
+    def get_compound_value(
+            self,
+            file_key: str,
+            route,
+            *,
+            numeric: bool = False,
+            default=None
+    ):
+        return self.get_value(
+            file_key,
+            route,
+            default=default,
+            compound=True,
+            compound_type=None,
+            numeric=numeric
+        )
+
+    def get_table_value(
+            self,
+            file_key: str,
+            route,
+            *,
+            numeric: bool = True,
+            default=None
+    ):
+        return self.get_value(
+            file_key,
+            route,
+            default=default,
+            compound=True,
+            compound_type="table",
+            numeric=numeric
+        )
+
+    def get_uniform_value(
+            self,
+            file_key: str,
+            route,
+            *,
+            numeric: bool = True,
+            default=None
+    ):
+        return self.get_value(
+            file_key,
+            route,
+            default=default,
+            compound=True,
+            compound_type="uniform",
+            numeric=numeric
+        )
+
+    def set_value(
+        self,
+        file_key: str,
+        route: Route,
+        value,
+        *,
+        create: bool = True,
+        list_style: str = "multiline"
+    ):
+        fd = self[file_key]
+
+        if fd.file_changed_on_disk() and fd.is_modified:
+            raise ExternalChangeError(
+                f"{file_key} has been modified externally"
+            )
+
+        route = self._parse_route(route)
+        fd.set(route, value, create=create, list_style=list_style)
+
+    def is_modified(self, file_key: str) -> bool:
+        if file_key not in self._cache:
+            return False
+        return self._cache[file_key].is_modified
+
+    def modified_files(self) -> List[str]:
+        return [
+            key for key, fd in self._cache.items()
+            if fd.is_modified
+        ]
+
+    def save(self, file_key: str):
+        if file_key in self._cache:
+            fd = self._cache[file_key]
+            if fd.is_modified:
+                fd.save()
+
+    def save_all(self):
+        for fd in self._cache.values():
+            if fd.is_modified:
+                fd.save()
+
+    def update(self):
+        if not self.root.exists():
+            raise FileNotFoundError(self.root)
+
+        self.files.clear()
+        self._cache.clear()
+
+        for p in self.root.rglob("*"):
+            if not p.is_file():
+                continue
+
+            if p.suffix:
+                continue
+
+            if "polyMesh" in p.parts:
+                if p.name != "boundary":
+                    continue
+
+            rel = p.relative_to(self.root)
+
+            if any(" " in part for part in rel.parts):
+                continue
+
+            if self._has_numeric_dir(rel.parts[:-1]):
+                continue
+
+            if not self._has_foam_header(p):
+                continue
+
+            key = self._make_key(rel)
+            if key is None:
+                continue
+
+            self.files[key] = p
+
+    def reload(self):
+        self.update()
+
+    def _make_key(self, rel: Path) -> str | None:
+        parts = list(rel.parts)
+
+        if not parts:
+            return None
+
+        if parts[0] in {"system", "constant"}:
+            parts = parts[1:]
+
+        if parts[-2:] == ["polyMesh", "boundary"]:
+            return "boundary"
+
+        return "/".join(parts)
+
+    def _has_numeric_dir(self, parts) -> bool:
+        for p in parts:
+            if p.isdigit():
+                return True
+            if p.startswith("0.") or p.startswith("0_"):
+                return True
+        return False
+
+    def _has_foam_header(self, path: Path) -> bool:
+        try:
+            with path.open("r", encoding="utf-8", errors="ignore") as f:
+                head = f.read(8192)
+        except Exception:
+            return False
+
+        return "FoamFile" in head
+
+    def _to_number(self, s):
+        if isinstance(s, (int, float)):
+            return s
+        if isinstance(s, (list, tuple)):
+            return [self._to_number(v) for v in s]
+        if not isinstance(s, str):
+            return s
+        try:
+            if "." in s or "e" in s.lower():
+                return float(s)
+            return int(s)
+        except ValueError:
+            return s
+
+    def _convert_table_to_numbers(self, table):
+        out = []
+        for row in table:
+            if isinstance(row, (list, tuple)):
+                out.append([self._to_number(v) for v in row])
+            else:
+                out.append(self._to_number(row))
+        return out
+
+

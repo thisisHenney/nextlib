@@ -1,0 +1,141 @@
+from pathlib import Path
+from typing import Callable, Optional
+from nextlib.openfoam.foamcase.api import FoamDict
+
+
+class FoamWrite:
+    DEFAULT_VERSION = "v2112"
+    DEFAULT_ENCODING = "utf-8"
+
+    def __init__(
+        self,
+        case_dir: str | Path,
+        *,
+        solver: str = "simpleFoam",
+        version: str = DEFAULT_VERSION,
+        encoding: str = DEFAULT_ENCODING
+    ):
+        self.case_dir = Path(case_dir)
+        self.solver = solver
+        self.version = version
+        self.encoding = encoding
+
+    def create_case(self, *, create_dicts: bool = True) -> Path:
+        self.case_dir.mkdir(parents=True, exist_ok=True)
+
+        zero_dir = self.case_dir / "0"
+        constant_dir = self.case_dir / "constant"
+        system_dir = self.case_dir / "system"
+        poly_mesh_dir = constant_dir / "polyMesh"
+
+        zero_dir.mkdir(exist_ok=True)
+        constant_dir.mkdir(exist_ok=True)
+        system_dir.mkdir(exist_ok=True)
+        poly_mesh_dir.mkdir(exist_ok=True)
+
+        if not create_dicts:
+            return self.case_dir
+
+        self.create_full_dict_file(
+            system_dir / "controlDict",
+            dict_name="controlDict",
+            location="system",
+            build_fn=self._build_control_dict
+        )
+
+        self.create_full_dict_file(
+            system_dir / "fvSchemes",
+            dict_name="fvSchemes",
+            location="system"
+        )
+
+        self.create_full_dict_file(
+            system_dir / "fvSolution",
+            dict_name="fvSolution",
+            location="system"
+        )
+
+        return self.case_dir
+
+    def create_full_dict_file(
+        self,
+        path: str | Path,
+        *,
+        dict_name: str,
+        location: str,
+        build_fn: Optional[Callable[[FoamDict], None]] = None
+    ) -> Path:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        header = self._create_foamfile_header(
+            dict_name=dict_name,
+            location=location
+        )
+        path.write_text(header + "\n", encoding=self.encoding)
+
+        foamdata = FoamDict(path)
+        foamdata.update(force=True)
+
+        if build_fn is not None:
+            build_fn(foamdata)
+
+        foamdata.save()
+        path.open("a", encoding=self.encoding).write("\n\n")
+
+        return path
+
+    def create_empty_dict_file(
+        self,
+        path: str | Path,
+        *,
+        dict_name: str,
+        location: str
+    ) -> Path:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        text = self._create_foamfile_header(
+            dict_name=dict_name,
+            location=location
+        ) + "\n\n"
+
+        path.write_text(text, encoding=self.encoding)
+        return path
+
+    def _build_control_dict(self, foam: FoamDict):
+        foam.set(["application"], self.solver)
+        foam.set(["startFrom"], "startTime")
+        foam.set(["startTime"], 0)
+        foam.set(["stopAt"], "endTime")
+        foam.set(["endTime"], 1000)
+        foam.set(["deltaT"], 1)
+        foam.set(["writeControl"], "timeStep")
+        foam.set(["writeInterval"], 100)
+        foam.set(["purgeWrite"], 0)
+        foam.set(["writeFormat"], "ascii")
+        foam.set(["writePrecision"], 6)
+        foam.set(["writeCompression"], "off")
+        foam.set(["timeFormat"], "general")
+        foam.set(["timePrecision"], 6)
+        foam.set(["runTimeModifiable"], "true")
+
+    def _create_foamfile_header(self, *, dict_name: str, location: str) -> str:
+        return (
+            "/*--------------------------------*- C++ -*----------------------------------*\\\n"
+            "| =========                |                                                 |\n"
+            "| \\\\      /  Field         | OpenFOAM: The Open Source CFD Toolbox           |\n"
+            f"|  \\\\    /   Operation     | Version:  {self.version:<12}                          |\n"
+            "|   \\\\  /    And           | Website:  www.openfoam.com                      |\n"
+            "|    \\\\/     Manipulation  |                                                 |\n"
+            "\\*---------------------------------------------------------------------------*/\n"
+            "FoamFile\n"
+            "{\n"
+            "    version     2.0;\n"
+            "    format      ascii;\n"
+            "    class       dictionary;\n"
+            f"    location    '{location}';\n"
+            f"    object      {dict_name};\n"
+            "}\n"
+            "// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //"
+        )

@@ -1,0 +1,73 @@
+# foamdict/api.py
+
+from nextlib.openfoam.PyFoamDict4.parser import parse_cst
+from nextlib.openfoam.PyFoamDict4.builder import build_ast
+from nextlib.openfoam.PyFoamDict4.editor import FoamEditor
+from nextlib.openfoam.PyFoamDict4.rewriter import Rewriter
+
+class FoamDict:
+    def __init__(self, text: str):
+        self.text = text
+        self.cst = parse_cst(text)
+        self.ast = build_ast(self.cst)
+        self.editor = FoamEditor(self.ast)
+        self.rewriter = Rewriter(text)
+
+    def set(self, route, value, *, formatter):
+        parent, cst_entry = self._locate_by_route(route)
+
+        if cst_entry is None:
+            raise KeyError(f"Route not found: {route}")
+
+        new_text = formatter(value)
+
+        self.rewriter.replace(
+            cst_entry.value_node.span.start,
+            cst_entry.value_node.span.end,
+            new_text
+        )
+
+    def dumps(self):
+        return self.rewriter.apply()
+
+    def _locate_cst_entry(self, node, key):
+        """
+        Find CSTEntry with given key under a CSTDict node.
+        """
+        for entry in node.entries:
+            if entry.key_token.text == key:
+                return entry
+        return None
+
+    def _locate_by_route(self, route):
+        node = self.cst
+        parent = None
+        entry = None
+
+        for key in route:
+            # 1️⃣ dict 안에서 key 찾기
+            if hasattr(node, "entries"):
+                entry = self._locate_cst_entry(node, key)
+                if entry is None:
+                    return None, None
+                parent = node
+                node = entry.value_node
+                continue
+
+            # 2️⃣ list 안에서 compound 찾기 (boundary 핵심)
+            if hasattr(node, "items"):
+                found = None
+                for item in node.items:
+                    if item.__class__.__name__ == "CSTCompound":
+                        if item.head.text == key:
+                            found = item
+                            break
+                if found is None:
+                    return None, None
+                parent = node
+                node = found.body
+                continue
+
+            return None, None
+
+        return parent, entry

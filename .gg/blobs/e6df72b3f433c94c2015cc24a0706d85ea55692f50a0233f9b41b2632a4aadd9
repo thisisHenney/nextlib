@@ -1,0 +1,34 @@
+# ast_nodes.py
+
+class ASTNode:
+    pass
+
+
+class ASTValue(ASTNode):
+    def __init__(self, value, *, cst_node=None):
+        self.value = value
+        self.cst_node = cst_node
+
+
+class ASTEntry(ASTNode):
+    def __init__(self, key, value_node, *, cst_entry=None):
+        self.key = key
+        self.value_node = value_node
+        self.cst_entry = cst_entry
+
+
+class ASTDict(ASTNode):
+    def __init__(self):
+        self.entries = {}   # key -> ASTEntry
+
+
+class ASTCompound(ASTNode):
+    def __init__(self, head, body, *, cst_node=None):
+        self.head = head
+        self.body = body
+        self.cst_node = cst_node
+
+
+class ASTList(ASTNode):
+    def __init__(self):
+        self.items = []    # list[ASTCompound]

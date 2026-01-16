@@ -1,0 +1,53 @@
+from __future__ import annotations
+from dataclasses import dataclass, field
+from typing import List, Optional
+
+
+@dataclass
+class Span:
+    start: int
+    end: int
+
+@dataclass
+class CSTNode:
+    span: Span
+
+@dataclass
+class CSTEmpty(CSTNode):
+    pass
+
+@dataclass
+class CSTToken(CSTNode):
+    text: str
+
+@dataclass
+class CSTEntry(CSTNode):
+    key_token: Optional[CSTToken] = None
+    value_node: Optional[CSTNode] = None
+    semi_token: Optional[CSTToken] = None
+
+
+@dataclass
+class CSTDict(CSTNode):
+    lbrace: Optional[CSTToken] = None
+    entries: List[CSTEntry] = field(default_factory=list)
+    rbrace: Optional[CSTToken] = None
+
+
+@dataclass
+class CSTList(CSTNode):
+    lparen: Optional[CSTToken] = None
+    items: List[CSTNode] = field(default_factory=list)
+    rparen: Optional[CSTToken] = None
+
+
+@dataclass
+class CSTSeq(CSTNode):
+    parts: List[CSTNode] = field(default_factory=list)
+
+
+@dataclass
+class CSTCompound(CSTNode):
+    head: CSTToken
+    body: CSTNode
+

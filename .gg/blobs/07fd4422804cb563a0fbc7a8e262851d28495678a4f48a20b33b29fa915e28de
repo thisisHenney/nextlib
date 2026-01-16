@@ -1,0 +1,23 @@
+from nextlib.openfoam.foamcase.foamcase import FoamCase
+
+# Test
+path = rf"C:\Users\thisi\OneDrive\바탕 화면\TestCase\simplefoam"
+
+if __name__ == '__main__':
+    foamcase = FoamCase(path)
+    files = foamcase.keys()
+    # print(files)
+
+    epsilon = foamcase.file('0/epsilon')
+
+    value = epsilon.get_value('dimensions')
+    print(value)
+
+    value = epsilon.get_value('internalField')
+    print(value)
+
+    value = epsilon.get_value('boundaryField.lowerWall.type')
+    print(value)
+
+    epsilon.set_value('boundaryField.lowerWall.type', 'epsilonWallFunction')
+    epsilon.save()

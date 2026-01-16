@@ -1,0 +1,11 @@
+/*
+QLabel{
+	border: none;
+	border-radius: 4px;
+	font-weight: bold;
+}
+*/
+
+QLabel::hover{
+   color:  blue;
+}

@@ -1,0 +1,29 @@
+# Setting
+height: 24
+
+
+# Blue Style -------------------------------------------------------------------
+QLineEdit{
+	border: 1 solid darkgray;
+	border-radius: 4;
+    /* padding: 2px; */
+}
+
+QLineEdit::hover{
+    border: 1 solid blue;
+	background-color: #e5f1fb;
+}
+
+QLineEdit::disabled{
+	background-color: #eeeeee;
+}
+
+
+/*
+QLineEdit::hover{
+    border: 1 solid darkorange;
+    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
+                                stop: 0 #FFE5B5, stop: 1 #FCBE4C);
+}
+*/
+

@@ -1,0 +1,225 @@
+import sys
+from pathlib import Path
+import numpy as np
+
+from PySide6.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QFileDialog,
+    QMessageBox, QCheckBox, QLabel, QHBoxLayout, QSizePolicy,
+    QPushButton
+)
+from PySide6.QtCore import Qt
+
+import pyqtgraph as pg
+from pyqtgraph import ImageView, ColorMap
+
+
+# ======================================
+# 파일 로더
+# ======================================
+def detect_delimiter(line: str):
+    return "," if "," in line else None
+
+
+def load_waterfall_file(path: Path):
+    with path.open("r", encoding="utf-8") as f:
+        header = f.readline().strip()
+
+    delim = detect_delimiter(header)
+    parts = header.split(delim) if delim else header.split()
+
+    if len(parts) < 2:
+        raise ValueError("첫 줄에서 주파수 정보를 찾을 수 없습니다.")
+
+    freqs = np.array([float(x) for x in parts[1:]], dtype=float)
+    data = np.loadtxt(path, delimiter=delim, skiprows=1)
+
+    times = data[:, 0]
+    amps = data[:, 1:]
+
+    if amps.shape[1] != freqs.size:
+        raise ValueError("주파수 개수와 데이터 열 개수가 일치하지 않습니다.")
+
+    return times, freqs, amps
+
+
+# ======================================
+# Waterfall Widget (QWidget 기반)
+# ======================================
+class WaterfallWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        layout = QVBoxLayout(self)
+
+        pg.setConfigOptions(imageAxisOrder="row-major")
+
+        # -------------------------------
+        # ImageView
+        # -------------------------------
+        self.image_view = ImageView(view=pg.PlotItem())
+        self.image_view.ui.menuBtn.hide()
+        self.image_view.ui.roiBtn.hide()
+        layout.addWidget(self.image_view)
+
+        self.image_view.setSizePolicy(
+            QSizePolicy.Expanding,
+            QSizePolicy.Expanding
+        )
+
+        view = self.image_view.getView()
+        vb = view.getViewBox()
+        vb.setDefaultPadding(0.0)
+
+        view.setLabel("bottom", "Frequency", units="Hz")
+        view.setLabel("left", "Time", units="s")
+
+        # -------------------------------
+        # 하단 옵션 UI
+        # -------------------------------
+        bottom = QHBoxLayout()
+        layout.addLayout(bottom)
+
+        # 파일 열기 버튼
+        self.btn_open = QPushButton("파일 열기")
+        self.btn_open.clicked.connect(self.open_file_dialog)
+        bottom.addWidget(self.btn_open)
+
+        # Log 스케일 체크박스
+        self.log_checkbox = QCheckBox("Log10 색상 스케일")
+        self.log_checkbox.stateChanged.connect(self.update_image)
+        bottom.addWidget(self.log_checkbox)
+
+        bottom.addStretch()
+
+        self.status_label = QLabel("파일을 열어주세요.")
+        bottom.addWidget(self.status_label)
+
+        # -------------------------------
+        # 데이터 저장
+        # -------------------------------
+        self._times = None
+        self._freqs = None
+        self._amps = None
+
+        # BCYR (Tecplot) 컬러맵
+        self.cmap = self.create_bcyr_colormap()
+
+    # ----------------------------------
+    # BCYR Colormap
+    # ----------------------------------
+    def create_bcyr_colormap(self):
+        positions = np.array([0.0, 0.33, 0.66, 1.0])
+        colors = np.array([
+            [0,   0, 255],   # Blue
+            [0, 255, 255],   # Cyan
+            [255, 255, 0],   # Yellow
+            [255,   0, 0],   # Red
+        ], dtype=np.ubyte)
+        return ColorMap(positions, colors)
+
+    # ----------------------------------
+    # 파일 열기 (다이얼로그 포함)
+    # ----------------------------------
+    def open_file_dialog(self):
+        path_str, _ = QFileDialog.getOpenFileName(
+            self,
+            "Waterfall 파일 선택",
+            "",
+            "Text/CSV (*.txt *.dat *.csv);;All Files (*.*)"
+        )
+        if not path_str:
+            return
+        self.load_file(Path(path_str))
+
+    # ----------------------------------
+    # 외부에서 호출 가능한 로딩 API
+    # ----------------------------------
+    def load_file(self, path: Path):
+        try:
+            times, freqs, amps = load_waterfall_file(path)
+        except Exception as e:
+            QMessageBox.critical(self, "로드 오류", str(e))
+            return
+
+        # kHz → Hz 자동 보정
+        if freqs.max() < 200:
+            freqs = freqs * 1000
+
+        self._times = times
+        self._freqs = freqs
+        self._amps = amps
+
+        self.status_label.setText(
+            f"[OK] {path.name} | Nt={amps.shape[0]}, Nf={amps.shape[1]}"
+        )
+
+        self.update_image()
+
+    # ----------------------------------
+    # 핵심 렌더링 로직
+    # ----------------------------------
+    def update_image(self):
+        if self._amps is None:
+            return
+
+        amps = self._amps.copy()
+        times = self._times
+        freqs = self._freqs
+
+        if self.log_checkbox.isChecked():
+            min_pos = np.min(amps[amps > 0]) if np.any(amps > 0) else 1e-12
+            amps = np.log10(np.clip(amps, min_pos, None))
+
+        # Tecplot 방식: Time 아래 → 위
+        amps = np.flipud(amps)
+
+        vmin = np.percentile(amps, 1)
+        vmax = np.percentile(amps, 99)
+
+        dx = (freqs[-1] - freqs[0]) / (freqs.size - 1)
+        dy = (times[-1] - times[0]) / (times.size - 1)
+
+        self.image_view.setImage(
+            amps,
+            pos=(freqs.min(), times.min()),
+            scale=(dx, dy),
+            autoRange=False,
+            autoLevels=False
+        )
+
+        self.image_view.setLevels(vmin, vmax)
+
+        # 컬러맵 적용 (Image + Colorbar)
+        lut = self.cmap.getLookupTable(nPts=256)
+        self.image_view.getImageItem().setLookupTable(lut)
+        self.image_view.getHistogramWidget().gradient.setColorMap(self.cmap)
+
+        view = self.image_view.getView()
+        vb = view.getViewBox()
+
+        vb.enableAutoRange(x=False, y=False)
+        vb.setAspectLocked(False)
+        vb.setDefaultPadding(0.0)
+
+        vb.setRange(
+            xRange=(freqs.min(), freqs.max()),
+            yRange=(times.min(), times.max()),
+            padding=0.0
+        )
+
+    # ----------------------------------
+    # 외부 제어용 API
+    # ----------------------------------
+    def reset_view(self):
+        self.image_view.getView().autoRange()
+
+
+# ======================================
+# 단독 테스트용
+# ======================================
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    w = WaterfallWidget()
+    w.resize(1200, 800)
+    w.show()
+    sys.exit(app.exec())

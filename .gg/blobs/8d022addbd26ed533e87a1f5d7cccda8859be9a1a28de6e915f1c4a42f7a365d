@@ -1,0 +1,135 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import List
+
+
+@dataclass(frozen=True)
+class Position:
+    line: int
+    col: int
+    index: int
+
+
+@dataclass(frozen=True)
+class Token:
+    kind: str
+    text: str
+    start: Position
+    end: Position
+
+
+PUNCT = {"{", "}", "(", ")", ";", "[", "]"}
+
+
+def lex(text: str) -> List[Token]:
+    tokens: List[Token] = []
+
+    i = 0
+    line = 1
+    col = 1
+    n = len(text)
+
+    def pos() -> Position:
+        return Position(line, col, i)
+
+    def advance():
+        nonlocal i, line, col
+        if i >= n:
+            return
+        ch = text[i]
+        i += 1
+        if ch == "\n":
+            line += 1
+            col = 1
+        else:
+            col += 1
+
+    def peek(offset=0):
+        j = i + offset
+        return text[j] if 0 <= j < n else ""
+
+    def emit(kind, start_pos, start_i):
+        end_pos = Position(line, col, i)
+        tokens.append(Token(kind, text[start_i:i], start_pos, end_pos))
+
+    while i < n:
+        ch = peek()
+
+        if ch.isspace():
+            advance()
+            continue
+
+        start_pos = pos()
+        start_i = i
+
+        if ch == "/" and peek(1) == "/":
+            advance()
+            advance()
+            while i < n and peek() != "\n":
+                advance()
+            emit("COMMENT", start_pos, start_i)
+            continue
+
+        if ch == "/" and peek(1) == "*":
+            advance()
+            advance()
+            while i < n:
+                if peek() == "*" and peek(1) == "/":
+                    advance()
+                    advance()
+                    break
+                advance()
+            emit("COMMENT", start_pos, start_i)
+            continue
+
+        if ch == "#":
+            advance()
+            while i < n and not peek().isspace() and peek() not in PUNCT:
+                advance()
+            emit("DIRECTIVE", start_pos, start_i)
+            continue
+
+        if ch == '"':
+            advance()
+            while i < n:
+                if peek() == "\\" and peek(1):
+                    advance()
+                    advance()
+                    continue
+                if peek() == '"':
+                    advance()
+                    break
+                advance()
+            emit("STRING", start_pos, start_i)
+            continue
+
+        if ch in PUNCT:
+            advance()
+            emit("PUNCT", start_pos, start_i)
+            continue
+
+        if ch.isdigit() or (ch in "+-" and peek(1).isdigit()):
+            advance()
+            while i < n and (peek().isalnum() or peek() in ".eE+-"):
+                advance()
+            emit("NUMBER", start_pos, start_i)
+            continue
+
+        advance()
+        while i < n:
+            c = peek()
+
+            if c.isspace() or c in PUNCT:
+                break
+
+            if c == "/" and peek(1) in "/*":
+                break
+
+            advance()
+
+        emit("WORD", start_pos, start_i)
+
+    eof_pos = Position(line, col, i)
+    tokens.append(Token("EOF", "", eof_pos, eof_pos))
+    return tokens

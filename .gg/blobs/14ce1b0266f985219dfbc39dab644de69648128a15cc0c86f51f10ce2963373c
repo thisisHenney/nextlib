@@ -1,0 +1,82 @@
+from .builder import NO_VALUE
+
+
+def format_value(
+    value,
+    *,
+    key=None,
+    indent="",
+    list_style="multiline"
+):
+    key_col = 15
+
+    if value is NO_VALUE:
+        return ""
+
+    if value is None:
+        return ""
+
+    if isinstance(value, bool):
+        return "true" if value else "false"
+
+    if isinstance(value, (int, float)):
+        return str(value)
+
+    if isinstance(value, str):
+        return value
+
+    if isinstance(value, dict):
+        base = indent
+        child = base + " " * 4
+
+        lines = []
+        lines.append(f"{base}{{")
+
+        for k, v in value.items():
+            if isinstance(v, dict):
+                lines.append(f"{child}{k}")
+                lines.append(format_value(v, key=k, indent=child, list_style=list_style))
+            else:
+                fv = format_value(v, key=k, indent=child, list_style=list_style)
+                lines.append(f"{child}{k:<{key_col}} {fv};")
+
+        lines.append(f"{base}}}")
+        return "\n".join(lines)
+
+    if list_style == "vector_field":
+        base = indent
+        inner = base + " " * 4
+
+        lines = [f"{base}("]
+        for v in value:
+            if isinstance(v, (list, tuple)):
+                vec = " ".join(str(x) for x in v)
+                lines.append(f"{inner}({vec})")
+            else:
+                raise TypeError("vector_field requires list of tuples/lists")
+
+        lines.append(f"{base})")
+        return "\n".join(lines)
+
+    if isinstance(value, (list, tuple)):
+        if key == "inGroups":
+            items = " ".join(str(v) for v in value)
+            return f"{len(value)} ( {items} )"
+
+        if value and all(isinstance(v, (list, tuple)) for v in value):
+            inner = " ".join(f"({format_value(v)})" for v in value)
+            return f"({inner})"
+
+        if list_style == "multiline":
+            base = indent
+            inner_indent = base + " " * 4
+            lines = [f"{base}("]
+            for v in value:
+                lines.append(f"{inner_indent}{v}")
+            lines.append(f"{base})")
+            return "\n".join(lines)
+
+        inner = " ".join(str(v) for v in value)
+        return f"( {inner} )"
+
+    raise TypeError(f"Unsupported value type: {type(value)}")

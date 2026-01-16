@@ -1,0 +1,107 @@
+# foamdict/api.py
+
+from nextlib.openfoam.PyFoamDict4.parser import parse_cst
+from nextlib.openfoam.PyFoamDict4.builder import build_ast
+from nextlib.openfoam.PyFoamDict4.editor import FoamEditor
+from nextlib.openfoam.PyFoamDict4.rewriter import Rewriter
+from nextlib.openfoam.PyFoamDict4.foam_utils import unwrap
+
+print("### EDITOR.PY LOADED ###")
+
+class FoamDict:
+    def __init__(self, text: str):
+        self.text = text
+        self.cst = parse_cst(text)
+        self.ast = build_ast(self.cst)
+        self.editor = FoamEditor(self.ast)
+        self.rewriter = Rewriter(text)
+
+    def set(self, route, value):
+        parent, entry = self._locate_by_route(route)
+
+        if entry is None:
+            raise KeyError(f"Route not found: {route}")
+
+        new_text = format_value(value)
+
+        self.rewriter.replace(
+            entry.value_node.span.start,
+            entry.value_node.span.end,
+            new_text
+        )
+
+    # def set(self, route, value, *, formatter):
+    #     parent, cst_entry = self._locate_by_route(route)
+    #
+    #     if cst_entry is None:
+    #         raise KeyError(f"Route not found: {route}")
+    #
+    #     new_text = formatter(value)
+    #
+    #     self.rewriter.replace(
+    #         cst_entry.value_node.span.start,
+    #         cst_entry.value_node.span.end,
+    #         new_text
+    #     )
+
+    def set_partial(self, route, updates: dict, *, all=False, default=None, formatter=None):
+        current = self.get(route, all=all, default=default)
+
+        if not isinstance(current, dict):
+            raise TypeError(f"Partial set only allowed for dict (got {type(current).__name__})")
+
+        merged = dict(current)
+        merged.update(updates)
+
+        # formatter는 기존 set 시그니처에 맞춰 전달
+        if formatter is None:
+            raise TypeError("formatter is required")
+        self.set(route, merged, formatter=formatter)
+
+    def get(self, route, default=None):
+        return self.editor.get(route, default=default)
+
+    def dumps(self):
+        return self.rewriter.apply()
+
+    def _locate_cst_entry(self, node, key):
+        """
+        Find CSTEntry with given key under a CSTDict node.
+        """
+        for entry in node.entries:
+            if entry.key_token.text == key:
+                return entry
+        return None
+
+    def _locate_by_route(self, route):
+        node = self.cst
+        parent = None
+        entry = None
+
+        for key in route:
+            # 1️⃣ dict 안에서 key 찾기
+            if hasattr(node, "entries"):
+                entry = self._locate_cst_entry(node, key)
+                if entry is None:
+                    return None, None
+                parent = node
+                node = entry.value_node
+                continue
+
+            # 2️⃣ list 안에서 compound 찾기 (boundary 핵심)
+            if hasattr(node, "items"):
+                found = None
+                for item in node.items:
+                    if item.__class__.__name__ == "CSTCompound":
+                        if item.head.text == key:
+                            found = item
+                            break
+                if found is None:
+                    return None, None
+                parent = node
+                node = found.body
+                continue
+
+            return None, None
+
+        return parent, entry

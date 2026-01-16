@@ -1,0 +1,479 @@
+import re
+from typing import List, Optional, Tuple, Any
+
+
+def _find_boundary_block(lines: list[str], block_name: str) -> Tuple[Optional[int], Optional[int]]:
+    """boundary 블록 완전 수정"""
+    n = len(lines)
+
+    # 1. 숫자키 찾기
+    block_start = None
+    for i, line in enumerate(lines):
+        if line.strip() == block_name:
+            block_start = i
+            break
+    if block_start is None:
+        return None, None
+
+    # 2. ( 괄호 찾기
+    brace_start = None
+    for j in range(block_start + 1, n):
+        if lines[j].strip() == '(':
+            brace_start = j
+            break
+    if brace_start is None:
+        return None, None
+
+    # 3. brace_level ***완전 수정***
+    brace_level = 1
+    for k in range(brace_start + 1, n):
+        line = lines[k]
+        brace_level += line.count('(')  # ← 추가!
+        brace_level -= line.count(')')
+        if brace_level == 0:
+            return block_start, k
+    return None, None
+
+
+def get_key_names(content: str, parent_block: str = "") -> List[str]:
+    """boundary 형식 지원"""
+    content = content.expandtabs(4)
+    lines = content.split('\n')
+
+    if not parent_block:
+        return _get_top_level_keys_ordered(lines)
+
+    # 숫자 boundary 형식인지 확인
+    p_start, p_end = _find_boundary_block(lines, parent_block)
+    if p_start is not None:
+        return _get_keys_in_block_ordered(lines, p_start, p_end)
+
+    # 일반 블록 형식 fallback
+    p_start, p_end = _find_block_range_brace_fixed(lines, parent_block)
+    if p_start is None:
+        return []
+
+    return _get_keys_in_block_ordered(lines, p_start, p_end)
+
+def _get_keys_in_block_ordered(lines: list[str], start: int, end: int) -> List[str]:
+    """***핵심 수정: ';' 조건 완전 제거***"""
+    keys = []
+    for i in range(start + 1, end):
+        line_stripped = lines[i].strip()
+        if not line_stripped:
+            continue
+        # ***단순 키 매칭만***
+        key_match = re.match(r'^\w+', line_stripped)
+        if key_match:
+            key = key_match.group(0)
+            if key not in keys:
+                keys.append(key)
+    return keys
+
+def _get_top_level_keys_ordered(lines: list[str]) -> List[str]:
+    """최상위 키들 (순서 보존)"""
+    keys = []
+    brace_level = 0
+    for line in lines:
+        line_stripped = line.strip()
+        if not line_stripped or line_stripped.startswith('//'):
+            continue
+
+        brace_level += line.count('{') + line.count('(')
+        brace_level -= line.count('}') + line.count(')')
+
+        if brace_level == 0 and re.match(r'^\s*(\w+)\b', line_stripped):
+            key = re.match(r'^\s*(\w+)\b', line_stripped).group(1)
+            if key not in keys:  # 중복 제거
+                keys.append(key)
+    return keys
+
+
+def get_key_value(content: str, path: List[str]) -> Any:
+    """단순화된 로직"""
+    if not path:
+        return None
+
+    content = content.expandtabs(4)
+    lines = content.split('\n')
+
+    # 첫 번째 키로 블록 찾기
+    result = _get_key_value_at_level(lines, "", path[0])
+    if result is None or not isinstance(result, list):
+        return result
+
+    # 나머지 경로 탐색
+    if len(path) == 1:
+        return result  # ["3"] → ['outlet', 'fluid_to_thruster']
+
+    # 하위 경로 탐색
+    for key in path[1:]:
+        result = _get_key_value_at_level(lines, path[0], key)
+        if result is None or not isinstance(result, list):
+            return result
+        # 더 깊은 경로면 계속 진행
+
+    return result
+
+
+def _get_key_value_at_level(lines: list[str], parent_block: str, target_key: str) -> Any:
+    """boundary 최상위 키만 반환"""
+    if parent_block == "":
+        start, end = _find_boundary_block(lines, target_key)
+        if start is not None:
+            return _get_top_level_keys_in_boundary(lines, start, end)  # ***변경***
+
+    # 기존 로직
+    p_start, p_end = _find_boundary_block(lines, parent_block)
+    if p_start is None:
+        p_start, p_end = _find_block_range_brace_fixed(lines, parent_block)
+    if p_start is None:
+        return None
+
+    t_start, t_end = _find_named_block_in_range(lines, p_start, p_end, target_key)
+    if t_start is not None:
+        next_line = lines[t_start + 1].strip() if t_start + 1 < len(lines) else ""
+        if next_line.startswith('{'):
+            return _get_dict_keys_in_block_fixed(lines, t_start, t_end)
+
+    return _parse_key_value_direct_fixed(lines, p_start, p_end, target_key)
+
+
+def _get_top_level_keys_in_boundary(lines: list[str], start: int, end: int) -> List[str]:
+    """boundary 블록의 최상위 키만 추출 (outlet, fluid_to_thruster)"""
+    keys = []
+    brace_level = 0
+
+    for i in range(start + 1, end):
+        line_stripped = lines[i].strip()
+        if not line_stripped:
+            continue
+
+        # brace level 계산
+        brace_level += line_stripped.count('{')
+        brace_level -= line_stripped.count('}')
+
+        # brace_level == 0 일 때만 최상위 키 (outlet, fluid_to_thruster)
+        if brace_level == 0 and re.match(r'^\w+', line_stripped):
+            key = re.match(r'^\w+', line_stripped).group(0)
+            if key not in keys:
+                keys.append(key)
+
+    return keys
+
+def _parse_top_level_key_value_fixed(lines: list[str], key: str) -> Any:
+    """모든 형식 자동 판별 - 따옴표 토큰 포함"""
+    # 1. 블록 처리
+    start, end = _find_block_range_brace_fixed(lines, key)
+    if start is not None:
+        next_line = lines[start + 1].strip()
+        if next_line.startswith('('):
+            return _get_tuple_keys_top_level_fixed(lines, start, end)
+        elif next_line.startswith('{'):
+            return _get_dict_keys_in_block(lines, start, end)
+
+    # 2. inline 형식 판별
+    for i, line in enumerate(lines):
+        if re.match(rf'^\s*{re.escape(key)}\b', line.strip()):
+            return _parse_inline_by_format(line.strip(), key)
+
+    return None
+
+
+def _parse_inline_by_format(line: str, key: str) -> Any:
+    """inline 토큰 추출"""
+    # 배열: [0 1 -2 0 0 0 0];
+    m_array = re.search(r'\[(.*?)\];', line)
+    if m_array:
+        return re.findall(r'"[^"]*"|\w+', m_array.group(1))
+
+    # 튜플: key (value1 value2);
+    m_tuple = re.search(rf'{re.escape(key)}\s*\(([^)]+)\)', line)
+    if m_tuple:
+        return re.findall(r'"[^"]*"|\w+', m_tuple.group(1))
+
+    # 단순 값: key value;
+    m_simple = re.search(rf'{re.escape(key)}\s+([^\s;]+)', line)
+    if m_simple:
+        return [m_simple.group(1)]
+
+    # 스칼라: key 0;
+    m_scalar = re.search(r'\s+([^;]+);', line)
+    return m_scalar.group(1).strip() if m_scalar else None
+
+
+def _get_tuple_keys_top_level_fixed(lines: list[str], start: int, end: int) -> List[str]:
+    """() 블록 내 토큰들 - 따옴표 포함 토큰 전체 반환"""
+    tokens = []
+    for i in range(start + 1, end):
+        line_stripped = lines[i].strip()
+        if not line_stripped:
+            continue
+
+        # 토큰 추출: 단어, "따옴표문자열", 숫자 등
+        token_matches = re.findall(r'"[^"]*"|\w+', line_stripped)
+        for token in token_matches:
+            if token not in tokens:
+                tokens.append(token)
+    return tokens
+
+def _parse_key_value_direct_fixed(lines: list[str], p_start: int, p_end: int, key: str) -> Any:
+    """inGroups, offset 등 직접 키 파싱"""
+    for i in range(p_start, p_end):
+        if re.match(rf'^\s*{re.escape(key)}\b', lines[i]):
+            line = lines[i].strip()
+            m = re.search(r'\(\s*([^)]+)\s*\)', line)
+            if m:
+                return re.split(r'\s+', m.group(1).strip())
+    return None
+
+
+# ============================================================================
+# 핵심 구현 함수들 (완전 구현)
+# ============================================================================
+
+def _get_top_level_keys_all(lines: list[str]) -> List[str]:
+    """최상위 레벨 모든 키 이름들 추출"""
+    keys = []
+    brace_level = 0
+    for line in lines:
+        line_stripped = line.strip()
+        if not line_stripped or line_stripped.startswith('//'):
+            continue
+
+        brace_level += line.count('{') + line.count('(')
+        brace_level -= line.count('}') + line.count(')')
+
+        if brace_level == 0 and re.match(r'^\s*\w+\b', line_stripped):
+            key_match = re.match(r'^\s*(\w+)\b', line_stripped)
+            if key_match:
+                keys.append(key_match.group(1))
+
+    return list(set(keys))
+
+
+def _get_keys_in_range_all(lines: list[str], start: int, end: int) -> List[str]:
+    """범위 내 모든 키 이름들 추출"""
+    keys = []
+    for i in range(start + 1, end):
+        line_stripped = lines[i].strip()
+        if line_stripped and re.match(r'^\w+\b', line_stripped):
+            key_match = re.match(r'^\w+\b', line_stripped)
+            if key_match:
+                keys.append(key_match.group(0))
+    return list(set(keys))
+
+
+def _find_block_range_brace_fixed(lines: list[str], block_name: str) -> Tuple[Optional[int], Optional[int]]:
+    """OpenFOAM boundary 완전 지원 - 숫자/문자 모두"""
+    n = len(lines)
+
+    # 1. block_name 정확히 찾기 (strip 후 정확 매치)
+    start = None
+    for i, line in enumerate(lines):
+        if line.strip() == block_name:  # "3" == "3"
+            start = i
+            break
+
+    if start is None:
+        return None, None
+
+    # 2. 바로 다음 줄에 ( 또는 { 있는지 확인
+    brace_start = None
+    if start + 1 < n and lines[start + 1].strip() == '(':
+        brace_start = start + 1
+    elif start + 1 < n and lines[start + 1].strip() == '{':
+        brace_start = start + 1
+
+    if brace_start is None:
+        return None, None
+
+    # 3. brace_level로 블록 끝 찾기
+    brace_level = 1
+    brace_char = lines[brace_start].strip()[0]  # '(' 또는 '{'
+    end_char = ')' if brace_char == '(' else '}'
+
+    for k in range(brace_start + 1, n):
+        line = lines[k]
+        brace_level += line.count(brace_char)
+        brace_level -= line.count(end_char)
+        if brace_level == 0:
+            return start, k  # start="3" 라인, k=닫는 괄호 라인
+
+    return None, None
+
+
+def _parse_top_level_key_value(lines: list[str], key: str) -> Any:
+    """최상위 레벨 키 값 파싱 - {} vs () 자동 판별"""
+    start, end = _find_block_range_brace_fixed(lines, key)
+
+    if start is not None:
+        # 블록이 있으면 구조 판별
+        next_line = lines[start + 1].strip()
+        if next_line.startswith('{'):
+            # {} 블록: 딕셔너리 → 키 이름들 반환
+            return _get_dict_keys_in_block(lines, start, end)
+        elif next_line.startswith('('):
+            # () 블록: 리스트/튜플 → 내부 키들 반환 (regions 등)
+            return _get_tuple_keys_top_level(lines, start, end)
+
+    # inline 키-값 처리
+    for i, line in enumerate(lines):
+        if re.match(rf'^\s*{re.escape(key)}\b', line.strip()):
+            line_stripped = line.strip()
+            m = re.search(r'\s+([^;]+);', line_stripped)
+            if m:
+                return m.group(1).strip()
+
+    return None
+
+
+def _get_dict_keys_in_block_fixed(lines: list[str], start: int, end: int) -> List[str]:
+    """{} 블록 내 키들 정확히 추출"""
+    keys = []
+    for i in range(start + 1, end):
+        line_stripped = lines[i].strip()
+        if not line_stripped:
+            continue
+        key_match = re.match(r'^\s*(\w+)\b', line_stripped)
+        if key_match:
+            key = key_match.group(1)
+            first_part = line_stripped.split(';')[0].strip()
+            if key == first_part.split()[0]:
+                if key not in keys:
+                    keys.append(key)
+    return keys
+
+
+def _parse_libs_list_top_level(lines: list[str], start: int, end: int) -> List[str]:
+    """libs 블록 내부 리스트 파싱 (따옴표 포함)"""
+    libs = []
+    for i in range(start + 1, end):
+        line = lines[i].rstrip()
+        m = re.match(r'^\s*"([^"]*)"', line)
+        if m:
+            libs.append(f'"{m.group(1)}"')
+    return libs
+
+
+def _get_tuple_keys_top_level(lines: list[str], start: int, end: int) -> List[str]:
+    """() 블록 내 키들 (regions ( fluid () ... ) → ['fluid'])"""
+    keys = []
+    for i in range(start + 1, end):
+        line_stripped = lines[i].strip()
+        if re.match(r'^\w+\b', line_stripped):
+            key_match = re.match(r'^\w+\b', line_stripped)
+            if key_match:
+                keys.append(key_match.group(0))
+    return keys
+
+
+def _parse_key_value_direct(lines: list[str], p_start: int, p_end: int, key: str) -> Any:
+    """직접 키 값 파싱 (inGroups, offset 등)"""
+    for i in range(p_start, p_end):
+        if re.match(rf'^\s*{re.escape(key)}\b', lines[i]):
+            line = lines[i].strip()
+            m = re.search(r'\(\s*([^)]+)\)\s*;?', line)
+            if m:
+                return re.findall(r'[\w.-]+', m.group(1))
+    return None
+
+
+def _parse_key_value_in_block(lines: list[str], t_start: int, t_end: int, sub_key: str) -> List[str]:
+    """서브 블록 내 키 값 파싱"""
+    for i in range(t_start + 1, t_end):
+        if re.match(rf'^\s*{re.escape(sub_key)}\b', lines[i]):
+            line = lines[i].strip()
+            m = re.search(r'\(\s*([^)]+)\)\s*;?', line)
+            if m:
+                return re.findall(r'[\w.-]+', m.group(1))
+    return []
+
+
+def _find_named_block_in_range(lines: list[str], start: int, end: int, name: str) -> Tuple[
+    Optional[int], Optional[int]]:
+    """범위 내 named { ... } 블록 찾기"""
+    block_start = None
+    for i in range(start, end + 1):
+        if lines[i].strip() == name:
+            block_start = i
+            break
+    if block_start is None:
+        return None, None
+
+    i = block_start + 1
+    brace_level = 0
+    for j in range(i, end + 1):
+        brace_level += lines[j].count('{')
+        brace_level -= lines[j].count('}')
+        if brace_level == 0:
+            return block_start, j
+    return None, None
+
+
+def _find_number_parent(lines: list[str], number: str) -> Tuple[Optional[int], Optional[int]]:
+    """숫자 boundary 형식"""
+    n = len(lines)
+    for i, line in enumerate(lines):
+        if line.strip() == number:
+            for j in range(i + 1, n):
+                if lines[j].strip().startswith('('):
+                    start = j
+                    brace_level = 0
+                    for k in range(start, n):
+                        brace_level += lines[k].count('(')
+                        brace_level -= lines[k].count(')')
+                        if brace_level == 0:
+                            return start, k
+    return None, None
+
+
+# ============================================================================
+# 테스트
+# ============================================================================
+
+if __name__ == "__main__":
+    sample = """
+3
+(
+    outlet
+    {
+        type            patch;
+        nFaces          3417;
+        startFace       481906;
+    }
+
+    fluid_to_header
+    {
+        type            mappedWall;
+        inGroups        1 ( wall );
+        nFaces          717;
+        startFace       485323;
+        sampleMode      nearestPatchFace;
+        sampleRegion    header;
+        samplePatch     header_to_fluid;
+    }
+
+    fluid_to_thruster
+    {
+        type            mappedWall;
+        inGroups        1 ( wall );
+        nFaces          19428;
+        startFace       486040;
+        sampleMode      nearestPatchFace;
+        sampleRegion    thruster;
+        samplePatch     thruster_to_fluid;
+        offsetMode      uniform;
+        offset          ( -1.05234522323e-18 3.54658557345e-22 9.62413577015e-21 );
+    }
+
+)
+"""
+
+    print("=== get_key_names 테스트 ===")
+    print("최상위:", get_key_names(sample, "3"))
+
+    print("=== get_key_value 테스트 ===")
+    # print('3 → outlet 키들:', get_key_value(sample, ["regions"]))
+    # print('3 → outlet 키들:', get_key_value(sample, ["regions", "fluid"]))
+    # print('3 → outlet 키들:', get_key_value(sample, ["regions", "solid"]))

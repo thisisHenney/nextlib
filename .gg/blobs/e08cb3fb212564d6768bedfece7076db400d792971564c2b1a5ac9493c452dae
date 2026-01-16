@@ -1,0 +1,43 @@
+
+class FoamWrite:
+    def __init__(self):
+        ...
+
+    @staticmethod
+    def write_file(path, data):
+        with open(path, 'w') as f:
+            f.write(data)
+        return True
+
+    def create_dict_file(self, path):   # , version, location, object_name):
+        foam_data = self.create_foamfile_header()
+        self.write_file(path, foam_data)
+
+    def create_foamfile_header(self, version='v2112', location='system', dict_name='controlDict'):  # ):
+        header_data =  f'/*--------------------------------*- C++ -*----------------------------------*\\\n'
+        header_data += f'| =========                 |                                                 |\n'
+        header_data += f'| \\\\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |\n'
+        header_data += f'|  \\\\    /   O peration     | Version:  {version:12}                          |\n'
+        header_data += f'|   \\\\  /    A nd           | Website:  www.openfoam.com                      |\n'
+        header_data += f'|    \\\\/     M anipulation  |                                                 |\n'
+        header_data += f'\\*---------------------------------------------------------------------------*/\n'
+        header_data += f'FoamFile\n'
+        header_data += f'{{\n'
+        header_data += f'    version     2.0;\n'
+        header_data += f'    format      ascii;\n'
+        header_data += f'    class       dictionary;\n'
+        header_data += f'    location    \'{location}\';\n'
+        header_data += f'    object      {dict_name};\n'
+        header_data += f'}}\n'
+        header_data += self.create_foamfile_split() + '\n\n'
+        return header_data
+
+    @staticmethod
+    def create_foamfile_split():
+        split_data = '// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //'
+        return split_data
+
+    @staticmethod
+    def create_foamfile_bottom():
+        bottom_data = '// ************************************************************************* //'
+        return bottom_data

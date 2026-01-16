@@ -1,0 +1,145 @@
+import sys
+import numpy as np
+from PySide6.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QPushButton, QFileDialog,
+    QLabel, QHBoxLayout, QLineEdit
+)
+from PySide6.QtCore import Qt
+import pyqtgraph as pg
+
+
+class SpectrumViewer(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle("Spectrum Analysis Viewer")
+        self.resize(1200, 800)
+
+        layout = QVBoxLayout(self)
+
+        # ----------------------------
+        # 상단 UI
+        # ----------------------------
+        top = QHBoxLayout()
+
+        self.btn_load = QPushButton("Load .dat File")
+        self.btn_load.clicked.connect(self.load_file)
+        top.addWidget(self.btn_load)
+
+        top.addWidget(QLabel("Base Frequency (Hz):"))
+        self.base_freq_edit = QLineEdit("0")  # 회전 주파수(1X)
+        self.base_freq_edit.setFixedWidth(80)
+        top.addWidget(self.base_freq_edit)
+
+        self.btn_update_harm = QPushButton("Update Harmonics")
+        self.btn_update_harm.clicked.connect(self.update_harmonics)
+        top.addWidget(self.btn_update_harm)
+
+        top.addStretch()
+        layout.addLayout(top)
+
+        # ----------------------------
+        # PyQtGraph Plot Widget
+        # ----------------------------
+        pg.setConfigOption("background", "w")
+        pg.setConfigOption("foreground", "k")
+
+        self.plot = pg.PlotWidget()
+        self.plot.showGrid(x=True, y=True, alpha=0.3)
+
+        # x-log scale
+        self.plot.setLogMode(x=True, y=False)
+
+        self.plot.setLabel("bottom", "Frequency(Hz)")
+        self.plot.setLabel("left", "Pressure(Bar)")
+
+        layout.addWidget(self.plot)
+
+        # 그래프 저장용 핸들
+        self.curve = None
+        self.harm_text_items = []
+
+    # ---------------------------------------------------------
+    # 파일 읽기
+    # ---------------------------------------------------------
+    def load_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Load Spectrum Data", "", "DAT Files (*.dat *.txt)"
+        )
+        if not file_path:
+            return
+
+        try:
+            data = np.loadtxt(file_path)
+        except Exception as e:
+            print("Error loading file:", e)
+            return
+
+        # 데이터 구성
+        f = data[:, 0]
+        p = data[:, 1]
+
+        self.plot.clear()
+        self.harm_text_items = []
+
+        # 라인 + 점
+        pen = pg.mkPen(color=(200, 0, 0), width=1)
+        symbol_pen = pg.mkPen(color=(200, 0, 0))
+        self.curve = self.plot.plot(
+            f, p,
+            pen=pen,
+            symbol='o',
+            symbolPen=symbol_pen,
+            symbolSize=3,
+            symbolBrush=(200, 0, 0)
+        )
+
+        # 다시 라벨
+        self.plot.setLabel("bottom", "Frequency(Hz)")
+        self.plot.setLabel("left", "Pressure(Bar)")
+
+        self.update_harmonics()
+
+    # ---------------------------------------------------------
+    # Harmonics 표시
+    # ---------------------------------------------------------
+    def update_harmonics(self):
+        # 기존 텍스트 제거
+        for t in self.harm_text_items:
+            self.plot.removeItem(t)
+        self.harm_text_items = []
+
+        try:
+            base_f = float(self.base_freq_edit.text())
+        except:
+            return
+
+        if base_f <= 0:
+            return
+
+        # δ: harmonic 리스트
+        harmonics = [0.5, 1, 3, 6, 9, 12, 18]
+
+        for h in harmonics:
+            freq = base_f * h
+
+            # 세로선 표시
+            line = pg.InfiniteLine(freq, angle=90, pen=pg.mkPen("b", width=1))
+            self.plot.addItem(line)
+
+            # 텍스트
+            text = pg.TextItem(f"{h}X", color="blue", anchor=(0.5, 1.2))
+            text.setPos(freq, self.plot.viewRange()[1][1] * 0.98)
+            self.plot.addItem(text)
+
+            self.harm_text_items.append(text)
+
+
+# -------------------------------------------------------------
+# 실행 파트
+# -------------------------------------------------------------
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    win = SpectrumViewer()
+    win.show()
+    sys.exit(app.exec())

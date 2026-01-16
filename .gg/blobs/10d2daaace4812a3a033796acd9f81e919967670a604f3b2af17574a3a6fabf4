@@ -1,0 +1,148 @@
+# FoamCase.py
+from pathlib import Path
+from typing import Optional
+from foamdata import FoamData  # 파일명 대소문자 상황에 맞춰 조정하세요
+
+DEFAULT_TEMPLATE_FILES = {
+    "fvSolution", "fvSchemes", "controlDict", "transportProperties",
+    "turbulenceProperties", "RASProperties", "LESProperties",
+    "thermophysicalProperties", "blockMeshDict", "decomposeParDict",
+    "fvOptions", "setFieldsDict"
+}
+
+def generate_template(file_name: str, foam_version: str) -> str:
+    return f"""/*--------------------------------*- C++ -*----------------------------------*\\
+| =========                 |                                                 |
+| \\\\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\\\    /   O peration     | Version:  {foam_version:<37}|
+|   \\\\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\\\/     M anipulation  |                                                 |
+\\*---------------------------------------------------------------------------*/
+FoamFile
+{{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      {file_name};
+}}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+"""
+
+class FoamCase:
+    def __init__(self, case_root: Optional[str] = None, auto_load: bool = True):
+        self.case_root: Optional[Path] = None
+        self.files = {}
+        self.default_output_dir: Optional[Path] = None
+        self.foam_version: str = "v2112"
+        if case_root:
+            self.set_case(case_root, auto_load=auto_load)
+
+    def set_case(self, path: str, auto_load: bool = True) -> None:
+        p = Path(path)
+        if not p.exists() or not p.is_dir():
+            raise FileNotFoundError(f"Case directory not found: {path}")
+        self.case_root = p
+        default_dir = self.case_root / "system"
+        self.default_output_dir = default_dir if default_dir.exists() else self.case_root
+        if auto_load:
+            self.load()
+
+    def set_path(self, path: str) -> None:
+        if self.case_root is None:
+            raise RuntimeError("Case root not set.")
+        p = Path(path)
+        if not p.is_absolute():
+            p = self.case_root / p
+        p.mkdir(parents=True, exist_ok=True)
+        self.default_output_dir = p
+
+    def set_foam_version(self, version: str) -> None:
+        self.foam_version = version
+
+    def load(self) -> None:
+        if self.case_root is None:
+            raise RuntimeError("Case root is not set.")
+        self.files.clear()
+        for d in [self.case_root / "system", self.case_root / "constant", self.case_root / "0"]:
+            if d.exists() and d.is_dir():
+                self._load_dir(d)
+        for it in self.case_root.iterdir():
+            if it.is_file() and self._is_dict_file(it):
+                self._load_file(it)
+
+    def _load_dir(self, folder: Path) -> None:
+        for f in folder.iterdir():
+            if f.is_file() and self._is_dict_file(f):
+                self._load_file(f)
+
+    def _is_dict_file(self, file: Path) -> bool:
+        if file.suffix == "":
+            return True
+        if file.suffix.lower() in [".dict", ".cfg"]:
+            return True
+        return False
+
+    def _load_file(self, file: Path) -> None:
+        fname = file.name
+        fd = FoamData()
+        fd.set_file(str(file))
+        self.files[fname] = fd
+
+    def _create_new_file(self, file_name: str) -> FoamData:
+        if self.default_output_dir is None:
+            raise RuntimeError("default_output_dir is not set.")
+        safe_name = Path(file_name).name
+        full_path = self.default_output_dir / safe_name
+        if full_path.exists():
+            fd = FoamData()
+            fd.set_file(str(full_path))
+            self.files[safe_name] = fd
+            return fd
+        if safe_name in DEFAULT_TEMPLATE_FILES:
+            content = generate_template(safe_name, self.foam_version)
+        else:
+            content = ""
+        full_path.write_text(content, encoding='utf-8')
+        fd = FoamData()
+        fd.set_file(str(full_path))
+        self.files[safe_name] = fd
+        return fd
+
+    def __getitem__(self, key: str) -> FoamData:
+        if key in self.files:
+            return self.files[key]
+        return self._create_new_file(key)
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.files
+
+    def list_files(self) -> list:
+        return list(self.files.keys())
+
+    def get(self, file: str, route: list, *args, **kwargs):
+        fd = self[file]
+        return fd.get(route, *args, **kwargs)
+
+    def set(self, file: str, route: list, value, *args, **kwargs):
+        fd = self[file]
+        return fd.set(route, value, *args, **kwargs)
+
+    def save(self, file: str) -> None:
+        if file not in self.files:
+            raise KeyError(f"{file} not found.")
+        self.files[file].save()
+
+    def save_all(self) -> None:
+        for f in list(self.files.keys()):
+            self.save(f)
+
+    def summary(self) -> None:
+        print("==== FoamCase Summary ====")
+        print(f"Case root: {self.case_root}")
+        print(f"Default Output Dir: {self.default_output_dir}")
+        print(f"FOAM version (template): {self.foam_version}")
+        print(f"Loaded files ({len(self.files)}):")
+        for name in self.files:
+            print(f" - {name}")
+        print("==========================")

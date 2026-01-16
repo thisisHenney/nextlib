@@ -1,0 +1,31 @@
+# api.py
+from .parser import parse_cst
+from .builder import build_ast
+from .editor import FoamEditor
+from .rewriter import Rewriter
+from .formatter import format_value   # 기존 formatter 있으면 사용
+
+class FoamDict:
+    def __init__(self, text):
+        self.text = text
+        self.cst = parse_cst(text)
+        self.ast = build_ast(self.cst)
+        self.editor = FoamEditor(self.ast)
+        self.rewriter = Rewriter(text)
+
+    def get(self, route, default=None):
+        return self.editor.get(route, default=default)
+
+    def set(self, route, value):
+        ast_node = self.editor.get_node(route)
+
+        if ast_node is None or not hasattr(ast_node, "cst_node"):
+            raise KeyError(f"Route not found: {route}")
+
+        span = ast_node.cst_node.span
+        new_text = format_value(value)
+
+        self.rewriter.replace(span.start, span.end, new_text)
+
+    def dumps(self):
+        return self.rewriter.apply()

@@ -1,0 +1,51 @@
+from dataclasses import dataclass, asdict
+from datetime import datetime
+from pathlib import Path
+import json
+from nextlib.utils.file import is_dir, is_file
+
+
+@dataclass
+class BaseCase:
+    path: str = ""
+    file_name: str = ""
+    name: str = "NoNamed"
+
+    def init(self, file_name:str = "base_data.json"):
+        self.file_name = file_name
+
+    def set_defaults(self, name:str="", path: str=""):
+        self.path = path
+        self.name = name
+
+    def save(self, path="",  name=""):
+        if path:
+            self.path = path
+        if name:
+            self.name = name
+
+        if not is_dir(self.path):
+            Path(self.path).mkdir(parents=True, exist_ok=True)
+
+        file_path = Path(self.path) / self.file_name
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(asdict(self), f, ensure_ascii=False, indent=4)
+
+    def load(self, path):
+        self.path = path
+
+        file_path = Path(path) / self.file_name
+        if not is_file(file_path):
+            print(rf'Cannot read file: {file_path}')
+            self.name = Path(path).resolve().name
+            self.save()
+            return False
+
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        exclude_keys = {"path", "file_name"}
+        for key, value in data.items():
+            if hasattr(self, key) and key not in exclude_keys:
+                setattr(self, key, value)
+        return True

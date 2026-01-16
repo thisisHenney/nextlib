@@ -1,0 +1,86 @@
+import re
+from typing import List, Optional, Tuple
+
+def change_libs_list(
+    content: str,
+    parent_block: str,
+    new_libs: List[str],
+) -> str:
+    """
+    libs ( "lib1.so" "lib2.so" ); 블록 내부의 라이브러리 리스트를 통째로 교체.
+    """
+    content = content.expandtabs(4)
+    lines = content.split('\n')
+
+    # libs 줄 찾기
+    libs_idx = None
+    for i, line in enumerate(lines):
+        if re.match(rf'^\s*{re.escape(parent_block)}\b', line.strip()):
+            libs_idx = i
+            break
+    if libs_idx is None:
+        return content
+
+    # libs 다음 줄이 ( 인지 확인
+    open_paren_idx = libs_idx + 1
+    if (open_paren_idx >= len(lines) or
+        not lines[open_paren_idx].strip().startswith('(')):
+        return content
+
+    # 닫는 ); 줄 찾기 (libs 이후 마지막 ); )
+    close_paren_idx = None
+    paren_level = 0
+    for i in range(libs_idx, len(lines)):
+        if i == open_paren_idx:
+            paren_level += 1  # 첫 ( 는 이미 카운트
+        paren_level += lines[i].count('(')
+        paren_level -= lines[i].count(')')
+        if paren_level == 0 and i > libs_idx and ';)' in lines[i]:
+            close_paren_idx = i
+            break
+
+    if close_paren_idx is None:
+        return content
+
+    # libs ( ... ); 사이 내용 삭제
+    del lines[open_paren_idx + 1:close_paren_idx]
+
+    # 새 라이브러리 리스트 구성 (들여쓰기 4칸)
+    inner_indent = "    "
+    new_lines = [f'{inner_indent}"{lib}"' for lib in new_libs]
+
+    # libs ( 바로 다음에 삽입
+    lines[open_paren_idx + 1:open_paren_idx + 1] = new_lines
+
+    return '\n'.join(lines) + '\n'
+
+
+# ===================== 테스트 =====================
+
+if __name__ == "__main__":
+    original = """libs
+(
+    "libmyLiquids8.so"
+    "libsampling.so"
+);
+"""
+
+    print("=== 원본 ===")
+    print(original)
+
+    print("=== 변경 1: 두 라이브러리 ===")
+    result1 = change_libs_list(original, "libs", [
+        "libmyCustomFunction.so",
+        "libanotherUtility.so"
+    ])
+    print(result1)
+
+    print("=== 변경 2: 단일 라이브러리 ===")
+    result2 = change_libs_list(result1, "libs", [
+        "libutility.so"
+    ])
+    print(result2)
+
+    print("=== 변경 3: 빈 리스트 ===")
+    result3 = change_libs_list(result2, "libs", [])
+    print(result3)

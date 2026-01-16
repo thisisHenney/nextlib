@@ -1,0 +1,230 @@
+import sys
+import numpy as np
+from PySide6.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QFileDialog, QCheckBox
+)
+import pyqtgraph as pg
+
+
+# ==================================================
+# Plot Widget
+# ==================================================
+class TimeSeriesPlotWidget(pg.PlotWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.setBackground("w")
+        self.showGrid(x=True, y=True, alpha=0.4)
+
+        self.plotItem.setLabel("bottom", "Time(s)")
+        self.plotItem.setLabel("left", "Pressure Fluctuation (bar)")
+
+        self.plotItem.setClipToView(True)
+        self.plotItem.setDownsampling(mode="peak")
+        
+        self.legend = self.plotItem.addLegend(offset=(10, 10))
+
+    def plot_all(self,
+                 show_raw=True, show_filtered=True, show_mean=True,
+                 time_raw=None, raw=None, mean=None,
+                 time_filt=None, filtered=None):
+
+        self.clear()
+        self.legend = self.plotItem.addLegend(offset=(10, 10))
+
+        # -----------------------------
+        # Raw (맨 뒤)
+        # -----------------------------
+        if show_raw and time_raw is not None and raw is not None:
+            self.plot(
+                time_raw, raw,
+                pen=pg.mkPen((255, 0, 0), width=1),
+                name="Raw Data"
+            )
+
+        # -----------------------------
+        # Filtered (중간)
+        # -----------------------------
+        if show_filtered and time_filt is not None and filtered is not None:
+            curve = self.plot(
+                time_filt, filtered,
+                pen=pg.mkPen((0, 200, 0), width=1),
+                name="Filtered Data (10~10kHz)"
+            )
+            curve.setDownsampling(auto=True)
+
+
+        # -----------------------------
+        # Mean (맨 앞)
+        # -----------------------------
+        if show_mean and time_raw is not None and mean is not None:
+            self.plot(
+                time_raw, mean,
+                pen=pg.mkPen((0, 0, 255), width=2),
+                name="Mean Data"
+            )
+
+        self.enableAutoRange()
+
+
+# ==================================================
+# Main Window
+# ==================================================
+class MainWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle("Pressure Time Signal Viewer")
+
+        # Data storage
+        self.time_raw = None
+        self.raw = None
+        self.mean = None
+
+        self.time_filt = None
+        self.filtered = None
+
+        layout = QVBoxLayout(self)
+
+        # Plot
+        self.plot_widget = TimeSeriesPlotWidget()
+        layout.addWidget(self.plot_widget)
+
+        # ------------------------------------------------
+        # Controls
+        # ------------------------------------------------
+        ctrl_layout = QHBoxLayout()
+
+        self.chk_raw = QCheckBox("Raw")
+        self.chk_raw.setChecked(True)
+        self.chk_raw.stateChanged.connect(self.update_plot)
+        ctrl_layout.addWidget(self.chk_raw)
+
+        self.chk_filtered = QCheckBox("Filtered")
+        self.chk_filtered.setChecked(True)
+        self.chk_filtered.stateChanged.connect(self.update_plot)
+        ctrl_layout.addWidget(self.chk_filtered)
+
+        self.chk_mean = QCheckBox("Mean")
+        self.chk_mean.setChecked(True)
+        self.chk_mean.stateChanged.connect(self.update_plot)
+        ctrl_layout.addWidget(self.chk_mean)
+
+        ctrl_layout.addStretch()
+        layout.addLayout(ctrl_layout)
+
+        # ------------------------------------------------
+        # Buttons
+        # ------------------------------------------------
+        btn_layout = QHBoxLayout()
+
+        self.btn_raw = QPushButton("Load Raw Data")
+        self.btn_raw.clicked.connect(self.load_raw)
+        btn_layout.addWidget(self.btn_raw)
+
+        self.btn_filt = QPushButton("Load Filtered Data")
+        self.btn_filt.clicked.connect(self.load_filtered)
+        btn_layout.addWidget(self.btn_filt)
+
+        layout.addLayout(btn_layout)
+
+    # ------------------------------------------------
+    # Raw + Mean 계산
+    # ------------------------------------------------
+    def load_raw(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select Raw Data File", "",
+            "Data Files (*.dat *.txt)"
+        )
+        if not file_path:
+            return
+
+        data = np.loadtxt(file_path)
+
+        if data.ndim != 2 or data.shape[1] < 2:
+            raise ValueError("Raw 파일은 2컬럼(Time, Raw)이어야 합니다.")
+
+        self.time_raw = data[:, 0]
+        self.raw = data[:, 1]
+        self.mean = self.calc_mean(self.raw)
+
+        self.update_plot()
+
+    def calc_mean(self, raw):
+        n = len(raw)
+        if n < 5:
+            return raw.copy()
+
+        window = max(1, min(500, n // 10))
+        kernel = np.ones(window) / window
+        return np.convolve(raw, kernel, mode="same")
+
+    # ------------------------------------------------
+    # Filtered
+    # ------------------------------------------------
+    def load_filtered(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select Filtered Data File", "",
+            "Data Files (*.dat *.txt)"
+        )
+        if not file_path:
+            return
+
+        data = np.loadtxt(file_path)
+
+        if data.ndim != 2 or data.shape[1] < 2:
+            raise ValueError("Filtered 파일은 2컬럼(Time, Filtered)이어야 합니다.")
+        
+        self.time_filt = data[:, 0]   
+        self.filtered = data[:, 1]
+        
+        # downsample 로 그림
+        self.time_filt, self.filtered = self.downsample(
+           self.time_filt, self.filtered, max_points=8000
+        )
+
+        self.update_plot()
+    
+    def downsample(self, x, y, max_points=8000):
+        """
+        대용량 시계열 데이터 다운샘플링
+        화면 표시용 (시각적 손실 최소화)
+
+        x, y : 원본 데이터
+        max_points : 최대 표시 포인트 수
+        """
+        n = len(x)
+        if n <= max_points:
+            return x, y
+
+        step = max(1, n // max_points)
+        return x[::step], y[::step]
+     
+
+    # ------------------------------------------------
+    # Plot update
+    # ------------------------------------------------
+    def update_plot(self):
+        self.plot_widget.plot_all(
+            show_raw=self.chk_raw.isChecked(),
+            show_filtered=self.chk_filtered.isChecked(),
+            show_mean=self.chk_mean.isChecked(),
+            time_raw=self.time_raw,
+            raw=self.raw,
+            mean=self.mean,
+            time_filt=self.time_filt,
+            filtered=self.filtered
+        )
+
+
+# ==================================================
+# Run
+# ==================================================
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    win = MainWindow()
+    win.resize(1200, 650)
+    win.show()
+    sys.exit(app.exec())
+

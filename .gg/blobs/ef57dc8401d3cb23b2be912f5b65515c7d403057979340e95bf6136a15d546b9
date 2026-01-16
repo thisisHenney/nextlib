@@ -1,0 +1,85 @@
+from FoamData import FoamData
+
+if __name__ == "__main__":
+    # Office
+    root_path = rf"C:\Users\thisi\OneDrive\바탕 화면\FoamCase"
+
+    # Home
+    # root_path = rf"C:\Users\thisi\OneDrive\바탕 화면\TestCase\TestchemkinCase"
+    root_path = rf"C:\Users\thisi\OneDrive\바탕 화면\TestCase\simplefoam"
+
+    # file_path = rf"/constant/fluid/polyMesh/boundary"
+    # file_path = rf"/constant/polyMesh/boundary"
+
+
+    # file_path = rf"/system/fluid/fvSchemes"
+
+    # file_path = rf"\system\fvSchemes"
+    # file_path = rf"\system\blockMeshDict"
+    show_all = False
+    is_controlDict = False
+    if show_all or is_controlDict:
+        # ControlDict
+        print('### ControlDict ------------------------')
+        path = root_path + rf"\system\controlDict"
+        fd = FoamData(path)
+        all_data = fd.get([])  # 루트 전체
+
+        # print(all_data)  # 전체 최상위 키 확인
+        print(all_data['libs'])
+        print(all_data['startFrom'])
+        print(all_data['rDeltaTSmoothingCoeff'])
+
+    # fvSolution
+    is_fvSolution = False
+    if show_all or is_fvSolution:
+        print('### fvSolution ------------------------')
+        path = root_path + rf"\system\fvSolution"
+        fd = FoamData(path)
+        all_data = fd.get([])  # 루트 전체
+        # print(all_data)  # 전체 최상위 키 확인
+        print(all_data['SIMPLE'])
+        print(all_data['SIMPLE']['residualControl'])
+
+    # fvSchemes
+    is_fvSchemes = False
+    if show_all or is_fvSchemes:
+        print('### fvSchemes ------------------------')
+        # path = root_path + rf"\system\fluid\fvSchemes"
+        path = root_path + rf"\system\fvSchemes"
+        fd = FoamData(path)
+        all_data = fd.get([])  # 루트 전체
+        print(all_data)  # 전체 최상위 키 확인
+        print(all_data['gradSchemes'])
+        print(all_data['divSchemes']['div(phi,U)'])
+        print(all_data['divSchemes']['div((nuEff*dev2(T(grad(U)))))'])
+
+    # boundary
+    is_boundary = True
+    if show_all or is_boundary:
+        print('### boundary ------------------------')
+        path = root_path + rf"\constant\polyMesh\boundary"
+        fd = FoamData(path)
+        all_data = fd.get([])  # 루트 전체
+        # print(all_data)
+        # print(all_data['2']['inlet'])
+        # print(all_data['2']['upperWall'])
+        # print(all_data['2']['upperWall']['inGroups'])
+        print(all_data['2']['upperWall']['type'])
+        print(fd.get(["2", "upperWall", "type"]))
+
+    # fd.set_partial(
+    #     route=["outlet"],
+    #     updates={"type": "empty"}
+    # )
+    # fd.set(["2", "upperWall", "type"], "patch")
+    # fd.set(["2", "upperWall", "type"], "patch")
+    # fd.save()
+    # 수정
+    # fd.set(
+    #     ["actions", 0, "patch"],
+    #     "fluid_to_thruster_NEW"
+    # )
+    #
+
+

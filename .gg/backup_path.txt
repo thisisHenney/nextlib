@@ -1,0 +1,4 @@
+C:\Users\thisi\SynologyDrive\workNew\lib\backup\nextlib
+D:\lib\backup\nextlib
+\\henneyCloud\workNew\lib\backup\nextlib
+D:\Synology Drive\workNew\lib\backup\nextlib

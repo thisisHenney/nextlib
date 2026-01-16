@@ -1,0 +1,120 @@
+# FoamData.py
+from pathlib import Path
+from nextlib.openfoam.PyFoamDict4.api import FoamDict
+from nextlib.openfoam.PyFoamDict4.foam_ast import Primitive, DictValue, ListValue
+from nextlib.openfoam.PyFoamDict4.foam_utils import unwrap
+
+class FoamData:
+    def __init__(self, path: str | Path = ''):
+        self.path = Path(path)
+        self.encoding = "utf-8"
+        self.text = ''
+        self._foam = {}
+
+        self._initialize()
+
+    def _initialize(self):
+        self.update()
+
+    def update(self, path: str |Path = ''):
+        if path:
+            self.path = Path(path)
+
+        if self.path.is_file():
+            self.text = self.path.read_text(encoding="utf-8")
+            self._foam = FoamDict(self.text)
+
+    def get(self, route=[], *, all=False, default=None):
+        if not self.text:
+            return None
+
+        val = self._foam.editor.get(route, all=all, default=default)
+        result = unwrap(val)
+
+        result = self._normalize_semantics(result)
+
+        return result
+
+    # -------------------------
+    # Write API
+    # -------------------------
+    def set(self, route, value):
+        """
+        value:
+          - str / int / float
+          - Primitive
+          - DictValue / ListValue
+        """
+        if not isinstance(value, (Primitive, DictValue, ListValue)):
+            value = Primitive(value)
+
+        self._foam.set(route, value)
+
+    def set_partial(self, route, updates: dict):
+        self._foam.set_partial(route, updates)
+
+    def save(self, backup=True):
+        if backup:
+            bak = self.path.with_suffix(self.path.suffix + ".bak")
+            bak.write_text(self.text, encoding=self.encoding)
+
+        new_text = self._foam.dumps()
+        self.path.write_text(new_text, encoding=self.encoding)
+        self.text = new_text
+
+    # -------------------------
+    # Internal formatter
+    # -------------------------
+
+    def _format_value(self, value):
+        """
+        최소 변경 리라이터용 value formatter
+        """
+        if isinstance(value, Primitive):
+            return str(value.value)
+
+        if isinstance(value, ListValue):
+            inner = " ".join(self._format_value(v) for v in value.items)
+            return f"({inner})"
+
+        if isinstance(value, DictValue):
+            lines = ["{"]
+            for k, vals in value.entries.items():
+                for v in vals:
+                    lines.append(f"    {k} {self._format_value(v)};")
+            lines.append("}")
+            return "\n".join(lines)
+
+        raise TypeError(value)
+
+    def _normalize_inGroups(self, value):
+        if not isinstance(value, list):
+            return value
+
+        if len(value) >= 3 and value[1] == "(":
+            count = value[0]
+            groups = []
+            for v in value[2:]:
+                if isinstance(v, str):
+                    groups.append(v.rstrip(")"))
+            return [count, groups]
+
+        return value
+
+    def _normalize_semantics(self, obj):
+        """
+        Recursively normalize OpenFOAM semantic constructs
+        such as inGroups.
+        """
+        if isinstance(obj, dict):
+            for k, v in list(obj.items()):
+                if k == "inGroups":
+                    obj[k] = self._normalize_inGroups(v)
+                else:
+                    obj[k] = self._normalize_semantics(v)
+            return obj
+
+        if isinstance(obj, list):
+            return [self._normalize_semantics(v) for v in obj]
+
+        return obj

@@ -1,0 +1,526 @@
+from pathlib import Path
+import re
+
+from nextlib.openfoam.foamcase.internal.parser import parse_cst
+from nextlib.openfoam.foamcase.internal.ast import build_ast
+from nextlib.openfoam.foamcase.internal.editor import FoamEditor
+from nextlib.openfoam.foamcase.internal.formatter import format_value
+from nextlib.openfoam.foamcase.internal.ast import ASTValue, NO_VALUE
+
+NO_VALUE_TOKEN = "__no_value__"
+
+
+class Rewriter:
+    def __init__(self, text: str):
+        self.text = text
+        self.patches = []
+
+    def replace(self, span_start, span_end, new_text):
+        self.patches.append((span_start, span_end, new_text))
+
+    def insert(self, pos, new_text):
+        self.patches.append((pos, pos, new_text))
+
+    def apply(self):
+        out = self.text
+        for s, e, t in sorted(self.patches, reverse=True):
+            out = out[:s] + t + out[e:]
+
+        out = re.sub(r"\n{3,}", "\n\n", out)
+
+        out = re.sub(
+            r"\{\n\s*\n+(\s*\S)",
+            r"{\n\1",
+            out
+        )
+
+        return out
+
+
+class FoamDict:
+    def __init__(self, path: str | Path = ''):
+        self.path = Path(path)
+        self.encoding = "utf-8"
+        self.key_col = 15
+        self.tab_width = 4
+
+        self._parsed = False
+        self._mtime = self._get_mtime()
+        self.is_modified = False
+
+        self.text = None
+        self.cst = None
+        self.ast = None
+        self.editor = None
+        self.rewriter = None
+
+    def _get_mtime(self):
+        try:
+            return self.path.stat().st_mtime
+        except FileNotFoundError:
+            return None
+
+    def file_changed_on_disk(self) -> bool:
+        return self._get_mtime() != self._mtime
+
+    def update(self, force: bool = False):
+        if self._parsed and not force and not self.file_changed_on_disk():
+            return
+
+        raw = self.path.read_text(encoding="utf-8", errors="ignore")
+        self.text = raw.replace("\t", " " * self.tab_width)
+        self.cst = parse_cst(self.text)
+        self.ast = build_ast(self.cst)
+        self.editor = FoamEditor(self.ast)
+        self.rewriter = Rewriter(self.text)
+
+        self._mtime = self._get_mtime()
+        self._parsed = True
+        self.is_modified = False
+
+    def _reparse_from_buffer(self):
+        new_text = self.rewriter.apply()
+        self.text = new_text
+
+        self.cst = parse_cst(new_text)
+        self.ast = build_ast(self.cst)
+        self.editor = FoamEditor(self.ast)
+
+        self.rewriter = Rewriter(new_text)
+
+        self._parsed = True
+        self.is_modified = True
+
+    def get(self, route=[], default=None):
+        if not self._parsed:
+            self.update()
+
+        return self.editor.get(route, default=default)
+
+    def set(self, route, value, *, create=True,
+            before=None, after=None, list_style="multiline"):
+
+        if not self._parsed:
+            self.update()
+
+        if value == NO_VALUE_TOKEN:
+            value = NO_VALUE
+
+        if create:
+            if isinstance(value, dict):
+                self._ensure_dict_path(route, list_style=list_style)
+            else:
+                self._ensure_dict_path(route[:-1], list_style=list_style)
+
+        parent_node = self.editor.get_node(route[:-1])
+        key = route[-1]
+
+        if hasattr(parent_node, "items"):
+            for item in parent_node.items:
+                if hasattr(item, "head") and item.head == key:
+                    body_node = item.body
+
+                    value_text = format_value(
+                        value,
+                        key=key,
+                        indent=self._infer_dict_entry_indent(parent_node.cst_node),
+                        list_style=list_style
+                    )
+
+                    cst_body = item.cst_node
+                    start = cst_body.span.start
+                    end = cst_body.span.end
+
+                    self.rewriter.replace(
+                        start,
+                        end,
+                        value_text
+                    )
+
+                    item.body = self.editor._unwrap(
+                        ASTValue(value=value)
+                    )
+
+                    self._reparse_from_buffer()
+                    self.is_modified = True
+                    return
+
+        parent = self.editor.get_node(route[:-1])
+        if parent is None or not hasattr(parent, "entries"):
+            self._reparse_from_buffer()
+            parent = self.editor.get_node(route[:-1])
+            if parent is None or not hasattr(parent, "entries"):
+                raise KeyError(f"Invalid format or Parent route not found: {route[:-1]}")
+                return
+
+        key = route[-1]
+
+        entry = parent.entries.get(key)
+
+        if entry is not None and entry.cst_entry is None and hasattr(parent, "cst_node") and hasattr(parent.cst_node,
+                                                                                                     "items"):
+            cst_list = parent.cst_node
+            for it in cst_list.items:
+                if hasattr(it, "head") and getattr(it.head, "text", None) == key:
+                    indent = self._infer_dict_entry_indent(cst_list)
+                    value_text = format_value(value, key=key, indent=indent, list_style=list_style)
+                    start = it.body.span.start
+                    end = it.body.span.end
+                    self.rewriter.replace(start, end, value_text)
+                    self._reparse_from_buffer()
+                    self.is_modified = True
+                    return
+
+        if isinstance(value, dict):
+            if entry is not None:
+                return
+
+            last_key = next(reversed(parent.entries), None)
+
+            self.insert(
+                route=route[:-1],
+                key=key,
+                value=value,
+                after=last_key
+            )
+            return
+
+        if (
+                isinstance(value, (list, tuple))
+                and list_style in ("multiline", "vector_field")
+                and key != "inGroups"
+        ):
+            if entry is not None:
+                self.remove(route, missing_ok=True)
+
+            last_key = next(reversed(parent.entries), None)
+
+            self.insert(
+                route=route[:-1],
+                key=key,
+                value=value,
+                before=before,
+                after=last_key,
+                list_style=list_style
+            )
+            return
+
+        if entry is None:
+            self.insert(
+                route=route[:-1],
+                key=key,
+                value=value,
+                before=before,
+                after=after,
+                list_style=list_style
+            )
+            return
+
+        cst_entry = entry.cst_entry
+        text = self.text
+
+        key_start = cst_entry.key_token.span.start
+        line_start = text.rfind("\n", 0, key_start) + 1
+        indent = text[line_start:key_start]
+
+        key_col = key_start - line_start
+        key_end_col = key_col + len(key)
+
+        if cst_entry.value_node is not None:
+            value_start = cst_entry.value_node.span.start
+            value_col = value_start - line_start
+        else:
+            value_col = None
+
+        value_text = format_value(
+            value,
+            key=key,
+            indent=indent,
+            list_style=list_style
+        )
+
+        if value_col is not None and value_col > key_end_col + 1:
+            pad = " " * (value_col - key_end_col)
+            new_text = f"{indent}{key}{pad}{value_text}"
+        else:
+            if len(key) < self.key_col:
+                key_pad = f"{key:<{self.key_col}}"
+                new_text = f"{indent}{key_pad} {value_text}"
+            else:
+                new_text = f"{indent}{key} {value_text}"
+
+        self.rewriter.replace(
+            line_start,
+            cst_entry.span.end,
+            new_text
+        )
+
+        entry.value_node.value = value
+        self.is_modified = True
+
+    def save(self, backup=True):
+        # if backup:
+        #     bak = self.path.with_suffix(self.path.suffix + ".bak")
+        #     bak.write_text(self.text, encoding=self.encoding)
+
+        new_text = self.rewriter.apply()
+        self.path.write_text(new_text, encoding=self.encoding)
+        self.text = new_text
+
+    def insert(
+            self,
+            route,
+            key,
+            value,
+            *,
+            before=None,
+            after=None,
+            list_style="multiline"
+    ):
+        if not self._parsed:
+            self.update()
+
+        if value == NO_VALUE_TOKEN:
+            value = NO_VALUE
+
+        parent = self.editor.get_node(route)
+        if parent is None or not hasattr(parent, "entries"):
+            raise TypeError(f"Insert target is not a dict: {route}")
+
+        if key in parent.entries:
+            raise KeyError(f"Key already exists: {key}")
+
+        if not hasattr(parent, "cst_node") or parent.cst_node is None:
+            self._reparse_from_buffer()
+            parent = self.editor.get_node(route)
+            if parent is None or not hasattr(parent, "cst_node") or parent.cst_node is None:
+                raise RuntimeError("Parent ASTDict has no CST node")
+
+        cst_dict = parent.cst_node
+
+        ref_entry = None
+        insert_after = True
+
+        if before == "__first__":
+            first_key = next(iter(parent.entries), None)
+            if first_key:
+                ref_entry = parent.entries[first_key]
+                insert_after = False
+
+        elif before == "__last__":
+            last_key = next(reversed(parent.entries), None)
+            if last_key:
+                ref_entry = parent.entries[last_key]
+                insert_after = False
+
+        elif after == "__last__":
+            last_key = next(reversed(parent.entries), None)
+            if last_key:
+                ref_entry = parent.entries[last_key]
+                insert_after = True
+
+        elif before:
+            ref_entry = parent.entries.get(before)
+            insert_after = False
+            if ref_entry is None:
+                raise KeyError(f"before key not found: {before}")
+
+        elif after:
+            ref_entry = parent.entries.get(after)
+            insert_after = True
+            if ref_entry is None:
+                raise KeyError(f"after key not found: {after}")
+
+        if route == []:
+            key_indent = ""
+        else:
+            key_indent = self._infer_dict_entry_indent(cst_dict)
+
+        if isinstance(value, dict):
+            body = (
+                f"{key_indent}{key}\n"
+                f"{key_indent}{{\n"
+                f"{key_indent}}}\n"
+            )
+        elif isinstance(value, (list, tuple)) and list_style in ("multiline", "vector_field"):
+            value_text = format_value(
+                value,
+                key=key,
+                indent=key_indent,
+                list_style=list_style
+            )
+            # block_indent = key_indent + " " * 4
+            # value_text = self._ensure_block_indented(value_text, block_indent)
+
+            body = (
+                f"{key_indent}{key}\n"
+                f"{value_text};\n"
+            )
+
+        else:
+            value_text = format_value(
+                value,
+                key=key,
+                indent="",
+                list_style=list_style
+            )
+            key_pad = f"{key:<{self.key_col}}"
+            body = f"{key_indent}{key_pad} {value_text};\n"
+
+        if route == []:
+            new_entry_line = f"\n{body}\n"
+        else:
+            new_entry_line = body
+
+        text = self.text
+        if ref_entry and ref_entry.cst_entry:
+            if insert_after:
+                pos = text.find("\n", ref_entry.cst_entry.span.end)
+                if pos == -1:
+                    pos = len(text)
+                else:
+                    pos += 1
+            else:
+                pos = text.rfind("\n", 0, ref_entry.cst_entry.span.start) + 1
+        else:
+            pos = text.rfind("\n", 0, cst_dict.span.end) + 1
+            if pos <= 0:
+                pos = cst_dict.span.end - 1
+
+        self.rewriter.insert(pos, new_entry_line)
+        self._reparse_from_buffer()
+        self.is_modified = True
+
+    def _infer_dict_entry_indent(self, cst_dict):
+        text = self.text
+
+        lbrace_pos = text.find("{", cst_dict.span.start, cst_dict.span.end)
+        if lbrace_pos == -1:
+            return ""
+
+        line_start = text.rfind("\n", 0, lbrace_pos) + 1
+        brace_indent = text[line_start:lbrace_pos]
+
+        return brace_indent + " " * 4
+
+    def _find_footer_pos(self, text):
+        for match in re.finditer(r"^\s*//\s*\*{5,}.*$", text, re.MULTILINE):
+            line_start = match.start()
+            return line_start
+        return None
+
+    def _ensure_block_indented(self, block: str, indent: str) -> str:
+        if not indent:
+            return block
+
+        lines = block.splitlines()
+        first_non_empty = None
+        for ln in lines:
+            if ln.strip():
+                first_non_empty = ln
+                break
+
+        if first_non_empty is None:
+            return block
+
+        if first_non_empty.startswith(indent):
+            return block
+
+        return "\n".join((indent + ln) if ln.strip() else ln for ln in lines)
+
+    def _ensure_dict_path(self, route, *, list_style="multiline"):
+        if not route:
+            return
+
+        cur = []
+        for k in route:
+            if self.editor.get_node(cur + [k]) is None:
+                parent = self.editor.get_node(cur)
+                last_key = None
+                if parent and hasattr(parent, "entries") and parent.entries:
+                    last_key = next(reversed(parent.entries))
+
+                self.insert(
+                    route=cur,
+                    key=k,
+                    value={},
+                    after=last_key,
+                    list_style=list_style
+                )
+            cur.append(k)
+
+    def remove(self, route, *, missing_ok=False):
+        if not self._parsed:
+            self.update()
+
+        if not route:
+            raise ValueError("Empty route")
+
+        text = self.text
+
+        parent_route = route[:-1]
+        key = route[-1]
+
+        parent = self.editor.get_node(parent_route)
+
+        if parent is None or not hasattr(parent, "entries"):
+            if missing_ok:
+                return
+            raise KeyError(f"Parent route not found: {parent_route}")
+
+        entry = parent.entries.get(key)
+
+        if entry is None:
+            if missing_ok:
+                return
+            raise KeyError(f"Key not found: {key}")
+
+        if entry.cst_entry is None:
+            if missing_ok:
+                return
+            raise KeyError(f"Key has no CST entry (compound-derived): {key}")
+
+        is_dict = hasattr(entry.value_node, "cst_node") and entry.value_node.cst_node
+        if is_dict:
+            key_span = entry.cst_entry.span
+            dict_span = entry.value_node.cst_node.span
+
+            start = key_span.start
+            end = dict_span.end
+
+            line_start = text.rfind("\n", 0, start)
+            if line_start == -1:
+                line_start = 0
+            else:
+                line_start += 1
+
+            line_end = text.find("\n", end)
+            if line_end == -1:
+                line_end = end
+            else:
+                line_end += 1
+
+            self.rewriter.replace(line_start, line_end, "")
+
+        else:
+            cst_entry = entry.cst_entry
+            start = cst_entry.span.start
+            end = cst_entry.span.end
+
+            line_start = text.rfind("\n", 0, start)
+            if line_start == -1:
+                line_start = 0
+            else:
+                line_start += 1
+
+            line_end = text.find("\n", end)
+            if line_end == -1:
+                line_end = end
+            else:
+                line_end += 1
+
+            self.rewriter.replace(line_start, line_end, "")
+
+        del parent.entries[key]
+
+        self.is_modified = True

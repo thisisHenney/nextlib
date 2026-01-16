@@ -1,0 +1,217 @@
+# FoamData.py
+from typing import List, Optional, Tuple
+from foamtools import *
+
+class FoamData:
+    def __init__(self):
+        self.file_name: Optional[str] = None
+        self._org_data: str = ''
+        self.pure_data: str = ''
+        self.pure_tree: dict = {}
+
+    # -------------------------
+    # 파일 로드/설정
+    # -------------------------
+    def set_file(self, file_path: str) -> bool:
+        self.file_name = file_path
+        self.load()
+        return True
+
+    def load(self) -> None:
+        if not self.file_name:
+            return
+        self._org_data = read_file(self.file_name)
+        self._refresh_tree()
+
+    def _refresh_tree(self) -> None:
+        self.pure_data = remove_comment(self._org_data, delete_type=0, keep_line=True)
+        self.pure_data = remove_space_until_line_end(self.pure_data)
+        try:
+            tree, _ = parse_dict_block(self.pure_data, 0, len(self.pure_data))
+            self.pure_tree = tree
+        except Exception:
+            self.pure_tree = {}
+
+    # -------------------------
+    # 내부 문자열 교체 및 재파싱
+    # -------------------------
+    def _change_string(self, s: int, e: int, new_text: str) -> None:
+        self._org_data = replace_string_by_index(self._org_data, s, e, new_text, keep_line=False)
+        self._refresh_tree()
+
+    # -------------------------
+    # 노드 조회
+    # -------------------------
+    def _find_node(self, route: List[str]):
+        node = self.pure_tree
+        for key in route:
+            if not isinstance(node, dict) or key not in node:
+                return None
+            node = node[key]
+        return node
+
+    def is_dict(self, route: List[str]) -> bool:
+        node = self._find_node(route)
+        return isinstance(node, dict)
+
+    def is_keyword(self, route: List[str]) -> bool:
+        node = self._find_node(route)
+        return isinstance(node, str)
+
+    # -------------------------
+    # 위치 매핑(조립)
+    # -------------------------
+    def _get_dict_pos(self, route: List[str]) -> Tuple[Optional[int], Optional[int]]:
+        start_end = find_dict_pos(self.pure_data, route)
+        if start_end == (None, None):
+            return None, None
+        start_p, end_p = start_end
+        s_o, e_o = map_pos(self._org_data, self.pure_data, start_p, end_p)
+        return s_o, e_o
+
+    # -------------------------
+    # 삽입 / 수정
+    # -------------------------
+    def insert_name(self, route: List[str], prev_name='-1', add_line=False) -> bool:
+        if not route:
+            return False
+        parent = route[:-1]
+        key = route[-1]
+        if parent:
+            pstart, pend = self._get_dict_pos(parent)
+            if pstart is None:
+                return False
+            indent = find_indent(self._org_data, pstart) + 4
+            insert_block = "\n" + (" " * indent) + f"{key}\n" + (" " * indent) + "{\n" + (" " * indent) + "}\n"
+            self._change_string(pend, pend, insert_block)
+            return True
+        else:
+            insert_pos = len(self._org_data)
+            insert_block = f"\n{key}\n{{\n}}\n"
+            self._change_string(insert_pos, insert_pos, insert_block)
+            return True
+
+    def insert_keyword(self, route: List[str], value: str, prev_name='-1', add_line=False) -> bool:
+        parent = route[:-1]
+        key = route[-1]
+        if parent:
+            pstart, pend = self._get_dict_pos(parent)
+            if pstart is None:
+                return False
+            indent = find_indent(self._org_data, pstart) + 4
+            text = "\n" + (" " * indent) + f"{key} {value};\n"
+            self._change_string(pend, pend, text)
+            return True
+        else:
+            text = f"\n{key} {value};\n"
+            self._change_string(len(self._org_data), len(self._org_data), text)
+            return True
+
+    def set_entry(self, route: List[str], value: str) -> bool:
+        found = find_keyword_pos(self.pure_data, route)
+        if found is None:
+            return self.insert_keyword(route, value)
+        start_p, end_p = found
+        start_o, end_o = map_pos(self._org_data, self.pure_data, start_p, end_p)
+        text = f"{route[-1]} {value};"
+        self._change_string(start_o, end_o, text)
+        return True
+
+    # -------------------------
+    # 삭제 (정확히 위치 찾아 삭제)
+    # -------------------------
+    def delete_route(self, route: List[str]) -> bool:
+        if not route:
+            return False
+        parent = route[:-1]
+        key = route[-1]
+        if parent:
+            pstart, pend = self._get_dict_pos(parent)
+            if pstart is None:
+                return False
+        else:
+            pstart, pend = 0, len(self._org_data)
+        pos = find_string(self._org_data, key, pstart, pend, chars=[' ', '\t', ';', '\n', '{'])
+        if pos == -1:
+            return False
+        key_end = pos + len(key)
+        braces = find_braces_set(self._org_data, key_end)
+        if braces != (-1, -1):
+            s, e = braces
+            s2, e2 = self._adjust_indent(s, e, '\n')
+            self._change_string(s2, e2, '')
+            return True
+        semi = self._org_data.find(';', key_end, pend)
+        if semi == -1:
+            semi = self._org_data.find('\n', key_end, pend)
+            if semi == -1:
+                semi = pend
+        endpos = semi + 1
+        ls = self._org_data.rfind('\n', pstart, pos)
+        if ls == -1:
+            ls = pstart
+        else:
+            ls += 1
+        self._change_string(ls, endpos, '')
+        return True
+
+    # -------------------------
+    # ensure_route : 구조가 안맞으면 삭제후 생성
+    # -------------------------
+    def ensure_route(self, route: List[str]) -> None:
+        if not route or len(route) < 2:
+            return
+        current = []
+        for key in route[:-1]:
+            current.append(key)
+            if self.is_dict(current):
+                continue
+            self.delete_route(current)
+            self.insert_name(current, prev_name='-1', add_line=False)
+
+    # -------------------------
+    # set/get/save
+    # -------------------------
+    def set(self, route: List[str] = [], value: str = '', prev_name: str = '-1', add_line: bool=False) -> bool:
+        if isinstance(route, str):
+            route = [route]
+        self.ensure_route(route)
+        if isinstance(value, list) and len(value) > 0:
+            value = ' '.join(str(v) for v in value)
+        value = str(value)
+        if not self.is_dict(route):
+            if value == '':
+                return self.insert_name(route, prev_name=prev_name, add_line=add_line)
+            else:
+                return self.insert_keyword(route, value, prev_name=prev_name, add_line=add_line)
+        if self.is_keyword(route):
+            return self.set_entry(route, value)
+        return False
+
+    def get(self, route: List[str], default=None):
+        node = self._find_node(route)
+        return node if node is not None else default
+
+    def save(self) -> bool:
+        self._org_data = remove_space_until_line_end(self._org_data)
+        if not self._org_data.rstrip().endswith("// ************************************************************************* //"):
+            self._org_data = self._org_data.rstrip() + "\n// ************************************************************************* //\n"
+        write_file(self.file_name, self._org_data)
+        self.load()
+        return True
+
+    # -------------------------
+    # helper
+    # -------------------------
+    def _adjust_indent(self, start: int, end: int, char: str = '\n') -> Tuple[int,int]:
+        ls = self._org_data.rfind(char, 0, start)
+        if ls == -1:
+            s = 0
+        else:
+            s = ls + 1
+        epos = self._org_data.find(char, end)
+        if epos == -1:
+            e = len(self._org_data)
+        else:
+            e = epos + 1
+        return s, e

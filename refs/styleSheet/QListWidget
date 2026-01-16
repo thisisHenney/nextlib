@@ -1,0 +1,40 @@
+
+# Defaults Style ---------------------------------------------------------------
+QListWidget {
+	border: none;
+	background: transparent;
+}
+QListWidget::item:hover {
+    border-radius: 6px;
+    color: black;
+    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
+                                stop: 0 #FFE5B5, stop: 1 #FCBE4C);
+}
+QListWidget::item {
+    padding: 2px;
+    border-radius: 6px;
+}
+
+/* 선택된 아이템의 배경색도 투명하게 설정할 경우
+QListWidget::item:selected {
+	background: transparent;
+}
+*/
+
+
+# PushButton in ListWidget -----------------------------------------------------
+QPushButton {
+    text-align: center;
+    vertical-align: middle;
+    background-color: darkorange;
+    color: white;
+    border-radius: 2px;
+}
+QPushButton::hover {
+    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
+                        stop: 0 #DBB239, stop: 1 #FCBE4C);
+}
+QPushButton::pressed {
+    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
+                        stop: 0 #FCBE4C, stop: 1 #DBB239);
+}

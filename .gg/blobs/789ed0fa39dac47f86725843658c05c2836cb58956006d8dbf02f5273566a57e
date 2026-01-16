@@ -1,0 +1,14 @@
+# foamdict/rewriter.py
+class Rewriter:
+    def __init__(self, text: str):
+        self.text = text
+        self.patches = []
+
+    def replace(self, span_start, span_end, new_text):
+        self.patches.append((span_start, span_end, new_text))
+
+    def apply(self):
+        out = self.text
+        for s, e, t in sorted(self.patches, reverse=True):
+            out = out[:s] + t + out[e:]
+        return out

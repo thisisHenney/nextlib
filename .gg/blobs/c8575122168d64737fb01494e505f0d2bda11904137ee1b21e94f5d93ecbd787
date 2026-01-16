@@ -1,0 +1,308 @@
+# foamtools.py
+import re
+from pathlib import Path
+from typing import Tuple, Optional, List
+
+# ---------------------------
+# 파일 입출력
+# ---------------------------
+def read_file(path: str) -> str:
+    try:
+        p = Path(path)
+        if not p.exists() or not p.is_file():
+            return ''
+        return p.read_text(encoding='utf-8')
+    except Exception:
+        return ''
+
+def write_file(path: str, data: str) -> bool:
+    try:
+        p = Path(path)
+        if not p.parent.exists():
+            p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(data, encoding='utf-8')
+        return True
+    except Exception:
+        return False
+
+# ---------------------------
+# 정규식 패턴 미리 컴파일
+# ---------------------------
+_COMMENT_REMOVE_REGEX = re.compile(r'\/\*.*?\*\/|\/\/.*?$|#.*?$', re.DOTALL | re.MULTILINE)
+
+# ---------------------------
+# 문자열/주석 유틸
+# ---------------------------
+def remove_comment(buffer: str, delete_type: int = 0, keep_line: bool = False) -> str:
+    if not buffer:
+        return buffer
+    if delete_type == 0:
+        pattern = _COMMENT_REMOVE_REGEX
+    else:
+        parts = []
+        if delete_type & 1:
+            parts.append(r'\/\*.*?\*\/')
+        if delete_type & 2:
+            parts.append(r'\/\/.*?$')
+        if delete_type & 4:
+            parts.append(r'#.*?$')
+        pattern = re.compile("|".join(parts), re.DOTALL | re.MULTILINE)
+
+    if keep_line:
+        def repl(m):
+            txt = m.group(0)
+            return ''.join('\n' if c == '\n' else ' ' for c in txt)
+        return pattern.sub(repl, buffer)
+    return pattern.sub('', buffer)
+
+def remove_space_until_line_end(text: str) -> str:
+    return '\n'.join(line.rstrip() for line in text.splitlines())
+
+# ---------------------------
+# 빠른 검색 유틸
+# ---------------------------
+def find_string(text: str, pattern: str, start: int = 0, end: Optional[int] = None, chars=None) -> int:
+    if end is None:
+        end = len(text)
+    try:
+        pos = text.index(pattern, start, end)
+    except ValueError:
+        return -1
+    if not chars:
+        return pos
+    after = pos + len(pattern)
+    if after < len(text) and text[after] in chars:
+        return pos
+    return -1
+
+def find_near_by_string(text: str, pattern: str, start: int, end: Optional[int] = None, reverse: bool = False):
+    if end is None:
+        end = len(text)
+    if not reverse:
+        pos = text.find(pattern, start, end)
+    else:
+        pos = text.rfind(pattern, start, end)
+    if pos == -1:
+        return False
+    return pos - start
+
+def find_braces_set(text: str, start: int, brace_pair=('{' , '}')) -> Tuple[int,int]:
+    open_b, close_b = brace_pair
+    n = len(text)
+    try:
+        s = text.index(open_b, start)
+    except ValueError:
+        return -1, -1
+    depth = 1
+    i = s + 1
+    while i < n:
+        ch = text[i]
+        if ch == open_b:
+            depth += 1
+        elif ch == close_b:
+            depth -= 1
+            if depth == 0:
+                return s, i
+        i += 1
+    return -1, -1
+
+def find_indent(text: str, pos: int) -> int:
+    line_start = text.rfind('\n', 0, pos) + 1
+    s = text[line_start:pos]
+    cnt = 0
+    for ch in s:
+        if ch == ' ':
+            cnt += 1
+        else:
+            break
+    return cnt
+
+def replace_string_by_index(text: str, start: int, end: int, new: str, keep_line: bool = False) -> str:
+    if keep_line and new and not new.endswith('\n'):
+        new += '\n'
+    return text[:start] + new + text[end:]
+
+def insert_string_by_index(text: str, pos: int, value: str) -> str:
+    return text[:pos] + value + text[pos:]
+
+# ---------------------------
+# map_pos: pure_data 위치 -> org_data 위치 매핑 (실용적 heuristic)
+# ---------------------------
+def map_pos(org: str, pure: str, start: int, end: int) -> Tuple[int,int]:
+    """
+    pure[start:end] 에 해당하는 org의 (start,end) 위치를 찾습니다.
+    완벽 매핑은 어려우므로 준정확 heuristic 사용: anchor 토큰 검색 + 근접 위치 선택.
+    """
+    snippet = pure[start:end].strip()
+    if not snippet:
+        return start, end
+    token = snippet.split()[0]
+    if not token:
+        return start, end
+
+    positions = []
+    idx = org.find(token)
+    while idx != -1:
+        positions.append(idx)
+        idx = org.find(token, idx + 1)
+
+    if not positions:
+        # fallback: naive offset
+        return start, end
+
+    # choose the candidate whose line-start offset is closest to pure's line-start offset
+    pure_line = pure.rfind('\n', 0, start)
+    pure_line = pure_line if pure_line != -1 else 0
+
+    best = positions[0]
+    best_score = None
+    for pos in positions:
+        org_line = org.rfind('\n', 0, pos)
+        org_line = org_line if org_line != -1 else 0
+        score = abs(org_line - pure_line)
+        if best_score is None or score < best_score:
+            best_score = score
+            best = pos
+
+    org_start = best
+    # try to estimate end: prefer semicolon or closing brace after start
+    candidates = [org_start + len(snippet)]
+    semi = org.find(';', org_start, org_start + max(200, len(snippet)+50))
+    brace = org.find('}', org_start, org_start + max(200, len(snippet)+50))
+    if semi != -1:
+        candidates.append(semi + 1)
+    if brace != -1:
+        candidates.append(brace + 1)
+    org_end = max(candidates)
+    return org_start, org_end
+
+# ---------------------------
+# parse_dict_block: pure_data -> nested dict
+# ---------------------------
+def parse_dict_block(buffer: str, start: int, end: int):
+    data = {}
+    i = start
+    L = end
+    while i < L:
+        # skip whitespace
+        while i < L and buffer[i].isspace():
+            i += 1
+        if i >= L:
+            break
+
+        # read key token
+        key_start = i
+        while i < L and buffer[i] not in (' ', '\t', '\n', '{', ';'):
+            i += 1
+        key = buffer[key_start:i].strip()
+        if not key:
+            # skip one char to avoid infinite loop
+            i += 1
+            continue
+
+        # skip whitespace
+        while i < L and buffer[i].isspace():
+            i += 1
+
+        if i < L and buffer[i] == '{':
+            # block
+            bs, be = find_braces_set(buffer, i)
+            if bs == -1:
+                # malformed, read until end
+                content_start = i+1
+                content_end = L
+                sub_dict, _ = parse_dict_block(buffer, content_start, content_end)
+                data[key] = sub_dict
+                i = L
+            else:
+                content_start = bs + 1
+                content_end = be
+                sub_dict, _ = parse_dict_block(buffer, content_start, content_end)
+                data[key] = sub_dict
+                i = be + 1
+            continue
+
+        # otherwise key-value up to semicolon
+        semi = buffer.find(';', i, L)
+        if semi == -1:
+            value = buffer[i:L].strip()
+            data[key] = value
+            i = L
+            break
+        else:
+            value = buffer[i:semi].strip()
+            data[key] = value
+            i = semi + 1
+            continue
+    return data, i
+
+# ---------------------------
+# find_dict_pos / find_keyword_pos: pure_data 기준 위치찾기
+# ---------------------------
+def find_dict_pos(pure: str, route: List[str]):
+    if not route:
+        return None, None
+    pos = 0
+    L = len(pure)
+    current_start = -1
+    current_end = -1
+    for idx, name in enumerate(route):
+        # find header name
+        p = find_string(pure, name, pos, L, chars=[' ', '\t', '\n', '{', ';', ')'])
+        if p == -1:
+            return None, None
+        current_start = p
+        name_end = p + len(name)
+        # move past whitespace
+        j = name_end
+        while j < L and pure[j].isspace():
+            j += 1
+        if j < L and pure[j] == '{':
+            bs, be = find_braces_set(pure, j)
+            if bs == -1:
+                return None, None
+            current_end = be + 1
+            pos = bs + 1
+            continue
+        else:
+            # not a dict
+            if idx == len(route) - 1:
+                semi = pure.find(';', name_end, L)
+                if semi == -1:
+                    nl = pure.find('\n', name_end, L)
+                    return (current_start, nl+1 if nl != -1 else L)
+                else:
+                    return (current_start, semi+1)
+            else:
+                return None, None
+    return (current_start, current_end) if current_start != -1 else (None, None)
+
+def find_keyword_pos(pure: str, route: List[str]):
+    if not route:
+        return None
+    parent = route[:-1]
+    key = route[-1]
+    if parent:
+        pstart, pend = find_dict_pos(pure, parent)
+        if pstart is None:
+            return None
+        search_start = pstart
+        search_end = pend if pend is not None else len(pure)
+    else:
+        search_start = 0
+        search_end = len(pure)
+    pos = find_string(pure, key, search_start, search_end, chars=[' ', '\t', '\n', '{', ';', ')'])
+    if pos == -1:
+        return None
+    key_end = pos + len(key)
+    j = key_end
+    while j < search_end and pure[j].isspace():
+        j += 1
+    if j < search_end and pure[j] == '{':
+        return None
+    semi = pure.find(';', key_end, search_end)
+    if semi == -1:
+        nl = pure.find('\n', key_end, search_end)
+        return (pos, nl+1 if nl != -1 else search_end)
+    else:
+        return (pos, semi+1)

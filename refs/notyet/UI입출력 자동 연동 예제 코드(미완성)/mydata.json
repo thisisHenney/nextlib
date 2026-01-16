@@ -1,0 +1,74 @@
+{
+  "A": {
+    "A-1": {
+      "lineedit2": "111",
+      "sub": {
+        "A-1-x": {
+          "label3": "111",
+          "lineedit3": "111"
+        },
+        "A-1-y": {
+          "label3": "111",
+          "lineedit3": "111"
+        },
+        "A-1-z": {
+          "label3": "111",
+          "lineedit3": "111"
+        }
+      }
+    },
+    "label2": "1111",
+    "A-2": {
+      "lineedit2": "",
+      "sub": {
+        "A-2-x": {
+          "label3": "222",
+          "lineedit3": "222"
+        },
+        "A-2-y": {
+          "label3": "222",
+          "lineedit3": "222"
+        }
+      }
+    },
+    "A-3": {
+      "lineedit2": "",
+      "sub": {
+        "A-3-x": {
+          "label3": "333",
+          "lineedit3": "333"
+        },
+        "A-3-z": {
+          "label3": "333",
+          "lineedit3": "333"
+        }
+      }
+    }
+  },
+  "B": {
+    "label2": "Label2",
+    "B-1": {
+      "sub": {
+        "B-1-x": {
+          "label3": "Label3",
+          "lineedit3": ""
+        }
+      },
+      "lineedit2": ""
+    }
+  },
+  "C": {
+    "C-2": {
+      "sub": {
+        "C-2-y": {
+          "label3": "Label3",
+          "lineedit3": ""
+        },
+        "C-2-z": {
+          "label3": "Label3",
+          "lineedit3": ""
+        }
+      }
+    }
+  }
+}

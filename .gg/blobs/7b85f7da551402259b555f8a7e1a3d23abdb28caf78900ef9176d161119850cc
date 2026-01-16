@@ -1,0 +1,62 @@
+# formatter.py
+
+def format_value(
+    value,
+    *,
+    key=None,
+    indent="",
+    list_style="multiline"
+):
+    # pad = " " * indent
+    pad = indent
+
+    # --------------------------------
+    # None → 빈 값
+    # --------------------------------
+    if value is None:
+        return ""
+
+    # --------------------------------
+    # scalar
+    # --------------------------------
+    if isinstance(value, (int, float)):
+        return str(value)
+
+    if isinstance(value, str):
+        return value
+
+    # --------------------------------
+    # dict → block
+    # --------------------------------
+    if isinstance(value, dict):
+        lines = ["{"]
+        for k, v in value.items():
+            fv = format_value(v, key=k, indent=indent + 4)
+            lines.append(f"{pad}    {k:<16} {fv};")
+        lines.append(f"{pad}}}")
+        return "\n".join(lines)
+
+    # --------------------------------
+    # list / tuple
+    # --------------------------------
+    if isinstance(value, (list, tuple)):
+        if key == "inGroups":
+            items = " ".join(str(v) for v in value)
+            return f"{len(value)} ( {items} )"
+
+        if value and all(isinstance(v, (list, tuple)) for v in value):
+            inner = " ".join(f"({format_value(v)})" for v in value)
+            return f"({inner})"
+
+        if list_style == "multiline":
+            inner_indent = indent + " " * 4
+            lines = ["("]
+            for v in value:
+                lines.append(f"{inner_indent}{v}")
+            lines.append(f"{indent})")
+            return "\n".join(lines)
+
+        inner = " ".join(str(v) for v in value)
+        return f"( {inner} )"
+
+    raise TypeError(f"Unsupported value type: {type(value)}")

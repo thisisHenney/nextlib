@@ -1,0 +1,80 @@
+QStyle.SP_TitleBarMinButton                     Minimize button on title bars (e.g., in QMdiSubWindow ).
+QStyle.SP_TitleBarMenuButton                    Menu button on a title bar.
+QStyle.SP_TitleBarMaxButton                     Maximize button on title bars.
+QStyle.SP_TitleBarCloseButton                   Close button on title bars.
+QStyle.SP_TitleBarNormalButton                  Normal (restore) button on title bars.
+QStyle.SP_TitleBarShadeButton                   Shade button on title bars.
+QStyle.SP_TitleBarUnshadeButton                 Unshade button on title bars.
+QStyle.SP_TitleBarContextHelpButton             The Context help button on title bars.
+QStyle.SP_MessageBoxInformation                 The “information” icon.
+QStyle.SP_MessageBoxWarning                     The “warning” icon.
+QStyle.SP_MessageBoxCritical                    The “critical” icon.
+QStyle.SP_MessageBoxQuestion                    The “question” icon.
+QStyle.SP_DesktopIcon                           The “desktop” icon.
+QStyle.SP_TrashIcon                             The “trash” icon.
+QStyle.SP_ComputerIcon                          The “My computer” icon.
+QStyle.SP_DriveFDIcon                           The floppy icon.
+QStyle.SP_DriveHDIcon                           The harddrive icon.
+QStyle.SP_DriveCDIcon                           The CD icon.
+QStyle.SP_DriveDVDIcon                          The DVD icon.
+QStyle.SP_DriveNetIcon                          The network icon.
+QStyle.SP_DirHomeIcon                           The home directory icon.
+QStyle.SP_DirOpenIcon                           The open directory icon.
+QStyle.SP_DirClosedIcon                         The closed directory icon.
+QStyle.SP_DirIcon                               The directory icon.
+QStyle.SP_DirLinkIcon                           The link to directory icon.
+QStyle.SP_DirLinkOpenIcon                       The link to open directory icon.
+QStyle.SP_FileIcon                              The file icon.
+QStyle.SP_FileLinkIcon                          The link to file icon.
+QStyle.SP_FileDialogStart                       The “start” icon in a file dialog.
+QStyle.SP_FileDialogEnd                         The “end” icon in a file dialog.
+QStyle.SP_FileDialogToParent                    The “parent directory” icon in a file dialog.
+QStyle.SP_FileDialogNewFolder                   The “create new folder” icon in a file dialog.
+QStyle.SP_FileDialogDetailedView                The detailed view icon in a file dialog.
+QStyle.SP_FileDialogInfoView                    The file info icon in a file dialog.
+QStyle.SP_FileDialogContentsView                The contents view icon in a file dialog.
+QStyle.SP_FileDialogListView                    The list view icon in a file dialog.
+QStyle.SP_FileDialogBack                        The back arrow in a file dialog.
+QStyle.SP_DockWidgetCloseButton                 Close button on dock windows (see also QDockWidget ).
+QStyle.SP_ToolBarHorizontalExtensionButton      Extension button for horizontal toolbars.
+QStyle.SP_ToolBarVerticalExtensionButton        Extension button for vertical toolbars.
+QStyle.SP_DialogOkButton                        Icon for a standard OK button in a QDialogButtonBox .
+QStyle.SP_DialogCancelButton                    Icon for a standard Cancel button in a QDialogButtonBox .
+QStyle.SP_DialogHelpButton                      Icon for a standard Help button in a QDialogButtonBox .
+QStyle.SP_DialogOpenButton                      Icon for a standard Open button in a QDialogButtonBox .
+QStyle.SP_DialogSaveButton                      Icon for a standard Save button in a QDialogButtonBox .
+QStyle.SP_DialogCloseButton                     Icon for a standard Close button in a QDialogButtonBox .
+Style.SP_DialogApplyButton                     Icon for a standard Apply button in a QDialogButtonBox .
+QStyle.SP_DialogResetButton                     Icon for a standard Reset button in a QDialogButtonBox .
+QStyle.SP_DialogDiscardButton                   Icon for a standard Discard button in a QDialogButtonBox .
+QStyle.SP_DialogYesButton                       Icon for a standard Yes button in a QDialogButtonBox .
+QStyle.SP_DialogNoButton                        Icon for a standard No button in a QDialogButtonBox .
+QStyle.SP_ArrowUp                               Icon arrow pointing up.
+QStyle.SP_ArrowDown                             Icon arrow pointing down.
+QStyle.SP_ArrowLeft                             Icon arrow pointing left.
+QStyle.SP_ArrowRight                            Icon arrow pointing right.
+QStyle.SP_ArrowBack                             Equivalent to SP_ArrowLeft when the current layout direction is LeftToRight , otherwise SP_ArrowRight.
+QStyle.SP_ArrowForward                          Equivalent to SP_ArrowRight when the current layout direction is LeftToRight , otherwise SP_ArrowLeft.
+QStyle.SP_CommandLink                           Icon used to indicate a Vista style command link glyph.
+QStyle.SP_VistaShield                           Icon used to indicate UAC prompts on Windows Vista. This will return a null pixmap or icon on all other platforms.
+QStyle.SP_BrowserReload                         Icon indicating that the current page should be reloaded.
+QStyle.SP_BrowserStop                           Icon indicating that the page loading should stop.
+QStyle.SP_MediaPlay                             Icon indicating that media should begin playback.
+QStyle.SP_MediaStop                             Icon indicating that media should stop playback.
+QStyle.SP_MediaPause                            Icon indicating that media should pause playback.
+QStyle.SP_MediaSkipForward                      Icon indicating that media should skip forward.
+QStyle.SP_MediaSkipBackward                     Icon indicating that media should skip backward.
+QStyle.SP_MediaSeekForward                      Icon indicating that media should seek forward.
+QStyle.SP_MediaSeekBackward                     Icon indicating that media should seek backward.
+QStyle.SP_MediaVolume                           Icon indicating a volume control.
+QStyle.SP_MediaVolumeMuted                      Icon indicating a muted volume control.
+QStyle.SP_LineEditClearButton                   Icon for a standard clear button in a QLineEdit .
+QStyle.SP_DialogYesToAllButton                  Icon for a standard YesToAll button in a QDialogButtonBox .
+QStyle.SP_DialogNoToAllButton                   Icon for a standard NoToAll button in a QDialogButtonBox .
+QStyle.SP_DialogSaveAllButton                   Icon for a standard SaveAll button in a QDialogButtonBox .
+QStyle.SP_DialogAbortButton                     Icon for a standard Abort button in a QDialogButtonBox .
+QStyle.SP_DialogRetryButton                     Icon for a standard Retry button in a QDialogButtonBox .
+QStyle.SP_DialogIgnoreButton                    Icon for a standard Ignore button in a QDialogButtonBox .
+QStyle.SP_RestoreDefaultsButton                 Icon for a standard RestoreDefaults button in a QDialogButtonBox .
+QStyle.SP_TabCloseButton                        Icon for the close button in the tab of a QTabBar .
+QStyle.SP_CustomBase                            Base value for custom standard pixmaps; custom values must be greater than this value.

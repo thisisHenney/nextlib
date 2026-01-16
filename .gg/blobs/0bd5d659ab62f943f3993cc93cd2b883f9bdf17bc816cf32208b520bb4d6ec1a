@@ -1,0 +1,75 @@
+from pathlib import Path
+# from nextlib.openfoam.PyFoamDict.api import FoamDict
+from nextlib.openfoam.PyFoamDict.FoamCase import FoamCase
+from nextlib.openfoam.PyFoamDict.FoamWrite import FoamWrite
+
+# Office
+root_path = rf"C:\Users\thisi\OneDrive\바탕 화면\FoamCase"
+
+# Home
+# root_path = rf"C:\Users\thisi\OneDrive\바탕 화면\TestCase\simplefoam"
+root_path = rf"C:\Users\thisi\OneDrive\바탕 화면\TestCase\TestchemkinCase"
+# root_path = rf"C:\Users\thisi\OneDrive\바탕 화면\TestCase\Test1"
+
+if __name__ == "__main__":
+    case = FoamCase(root_path)
+    # print(case.keys())
+
+    # result = case.get_value("controlDict", "application")
+    # print(result)
+    # result = case.get_value("controlDict", "functions.#includeFunc")
+    # print(result)
+
+    # result = case.get_value("controlDict", "endTime")
+    # print(result)
+    # case.set_value("controlDict","endTime",1000)
+    # result = case.get_value("controlDict", "endTime")
+    # print(result)
+    # case.save_all()
+
+    result = case.get_table_value("controlDict", "rDeltaTSmoothingCoeff")
+    print(result)
+
+    result = case.get_value("controlDict", "libs")
+    print(result)
+
+    # foamdata = case['boundary']
+    # foamdata.update()
+
+    # result = foamdata.get([])
+
+    # print(result)
+
+    # result = foamdata.get(['runTimeModifiable'])
+    # print(result)   # 1
+    #
+    # foamdata.set(['runTimeModifiable'], False)
+    #
+    # result = foamdata.get(['runTimeModifiable'])
+    # print(result)   # 3
+
+    # result = foamdata.get(["newDict", "upperWall", "inGroups"])
+    # print(result)
+
+    # foamdata.set(["newDict", "newSub1", "newSub2"], 123)
+    # result = foamdata.get(["newDict", "newSub1", "newSub2"])
+
+    # foamdata.set(["libs"], ['"lib.so"', 'lib2.so'])
+    # foamdata.set(["single"], [3, 4, 5], list_style="single")
+    # foamdata.set(["single2"], [3, 4, 5])
+
+    # foamdata.set(
+    #     ["points"],
+    #     [
+    #         [1, 2, 3],
+    #         [0, 0, 0]
+    #     ],
+    #     list_style="vector_field"
+    # )
+
+    # result = foamdata.get(["libs3"])
+    # print(result)
+
+    # foamdata.set(["2", "upperWall", "inGroups"], value=["wall", "empty"])
+    # foamdata.set(["2", "upperWall", "newFaces"], value="123", before="__first__")
+    # foamdata.save()

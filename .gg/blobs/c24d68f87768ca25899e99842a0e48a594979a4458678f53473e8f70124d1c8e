@@ -1,0 +1,84 @@
+class BaseUtil:
+    def __init__(self):
+        self.lines = None
+        self.root_node = None
+        self._dirty = False
+
+    def get_bind(self, lines, root_node):
+        self.lines = lines
+        self.root_node = root_node
+
+    def _rebuild_node(self):
+        from openfoam.PyFoamCase.header.nodebuilder import NodeBuilder
+        from nextlib.openfoam.PyFoamCase.utils.tokenize import TokenizeUtil
+        from nextlib.openfoam.PyFoamCase.utils.extract import ExtractUtil
+
+        text = "\n".join(self.lines)
+        tokens = TokenizeUtil().tokenize(text)
+        data, _ = ExtractUtil().extract(tokens)
+        self.root_node = NodeBuilder(text).build(data)
+
+    def begin(self):
+        self._dirty = False
+
+    def mark_dirty(self):
+        self._dirty = True
+
+    def end(self):
+        if self._dirty:
+            self._rebuild_node()
+            self._dirty = False
+
+    def _find_node(self, node, route: str):
+        if not route:
+            return node
+
+        cur = node
+        for part in route.split("."):
+            if "[" in part and part.endswith("]"):
+                key, idx = part[:-1].split("[", 1)
+                idx = int(idx)
+
+                lst = cur.child_map.get(key)
+                if not lst or idx >= len(lst):
+                    return None
+                cur = lst[idx]
+            else:
+                lst = cur.child_map.get(part)
+                if not lst:
+                    return None
+                cur = lst[0]
+
+        return cur
+
+    def _guess_value_col(self, start, end):
+        base_indent = None
+
+        for i in range(start + 1, end):
+            line = self.lines[i]
+            s = line.lstrip()
+
+            if not s or s.startswith("//") or s.startswith("/*"):
+                continue
+            if ";" not in s:
+                continue
+            if "{" in s or "}" in s:
+                continue
+
+            indent = len(line) - len(s)
+
+            if base_indent is None:
+                base_indent = indent
+
+            if indent != base_indent:
+                continue
+
+            key = s.split()[0]
+            j = indent + len(key)
+            while j < len(line) and line[j] in " \t":
+                j += 1
+
+            return j
+
+        return None
+

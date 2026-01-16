@@ -1,0 +1,7 @@
+from foamcase import FoamCase
+
+c = FoamCase(rf'D:\projects\2025-01_KARI-BipropThrust\2.Src\GUI\BipropThrust\config\testcase')
+sol = c['fvSolution']
+result = sol.set(['PIMPLE', 'data'], 2)
+print(result)
+c.save_all()

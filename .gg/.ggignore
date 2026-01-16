@@ -1,0 +1,5 @@
+.gg
+.idea
+*.pyc
+__pycache__
+build

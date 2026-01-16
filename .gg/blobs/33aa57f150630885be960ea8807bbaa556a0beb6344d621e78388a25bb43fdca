@@ -1,0 +1,43 @@
+# foamdict/builder.py
+from nextlib.openfoam.PyFoamDict4.foam_ast import *
+from nextlib.openfoam.PyFoamDict4.cst import *
+
+
+def build_ast(node):
+    if isinstance(node, CSTToken):
+        return node.text
+
+    if isinstance(node, CSTSeq):
+        return [build_ast(p) for p in node.parts]
+
+    if isinstance(node, CSTList):
+        items = [build_ast(i) for i in node.items]
+
+        # ⭐ OpenFOAM name–dict pair list → dict 변환
+        if (
+                len(items) % 2 == 0
+                and all(isinstance(items[i], str) for i in range(0, len(items), 2))
+                and all(isinstance(items[i], dict) for i in range(1, len(items), 2))
+        ):
+            d = {}
+            for i in range(0, len(items), 2):
+                d[items[i]] = items[i + 1]
+            return d
+
+        return items
+
+    if isinstance(node, CSTDict):
+        d = {}
+        for e in node.entries:
+            key = e.key_token.text
+            val = build_ast(e.value_node)
+            if val is None and key in d:
+                continue
+
+            d[key] = val
+        return d
+
+    if isinstance(node, CSTEmpty):
+        return None
+
+    raise TypeError(node)

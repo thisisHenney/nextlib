@@ -1,0 +1,45 @@
+def format_value(value, *, indent=0):
+    pad = " " * indent
+
+    # None → 빈 값
+    if value is None:
+        return ""
+
+    # scalar
+    if isinstance(value, (int, float)):
+        return str(value)
+
+    if isinstance(value, str):
+        return value
+
+    # dict → block
+    if isinstance(value, dict):
+        lines = ["{"]
+        for k, v in value.items():
+            fv = format_value(v, indent=indent + 4)
+            lines.append(f"{pad}    {k:<16} {fv};")
+        lines.append(f"{pad}}}")
+        return "\n".join(lines)
+
+    # list
+    if isinstance(value, (list, tuple)):
+        # inGroups 특수 처리
+        if (
+            len(value) == 2
+            and isinstance(value[0], (str, int))
+            and isinstance(value[1], list)
+        ):
+            cnt = value[0]
+            items = " ".join(str(v) for v in value[1])
+            return f"{cnt}({items})"
+
+        # list of list → nested list
+        if value and all(isinstance(v, (list, tuple)) for v in value):
+            inner = " ".join(f"({format_value(v)})" for v in value)
+            return f"({inner})"
+
+        # list of scalars / strings
+        inner = " ".join(str(v) for v in value)
+        return f"({inner})"
+
+    raise TypeError(f"Unsupported value type: {type(value)}")

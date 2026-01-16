@@ -1,0 +1,154 @@
+# foamdict/lexer.py
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import List
+
+
+# -------------------------
+# Span / Token
+# -------------------------
+
+@dataclass(frozen=True)
+class Position:
+    line: int
+    col: int
+    index: int   # absolute character index
+
+
+@dataclass(frozen=True)
+class Token:
+    kind: str            # WORD, NUMBER, STRING, PUNCT, COMMENT, DIRECTIVE, EOF
+    text: str
+    start: Position
+    end: Position
+
+
+# -------------------------
+# Lexer
+# -------------------------
+
+PUNCT = {"{", "}", "(", ")", ";"}
+
+
+def lex(text: str) -> List[Token]:
+    tokens: List[Token] = []
+
+    i = 0
+    line = 1
+    col = 1
+    n = len(text)
+
+    def pos() -> Position:
+        return Position(line, col, i)
+
+    def advance():
+        nonlocal i, line, col
+        if i >= n:
+            return
+        ch = text[i]
+        i += 1
+        if ch == "\n":
+            line += 1
+            col = 1
+        else:
+            col += 1
+
+    def peek(offset=0):
+        j = i + offset
+        return text[j] if 0 <= j < n else ""
+
+    def emit(kind, start_pos, start_i):
+        end_pos = Position(line, col, i)
+        tokens.append(Token(kind, text[start_i:i], start_pos, end_pos))
+
+    while i < n:
+        ch = peek()
+
+        # whitespace
+        if ch.isspace():
+            advance()
+            continue
+
+        start_pos = pos()
+        start_i = i
+
+        # line comment //
+        if ch == "/" and peek(1) == "/":
+            advance()
+            advance()
+            while i < n and peek() != "\n":
+                advance()
+            emit("COMMENT", start_pos, start_i)
+            continue
+
+        # block comment /* ... */
+        if ch == "/" and peek(1) == "*":
+            advance()
+            advance()
+            while i < n:
+                if peek() == "*" and peek(1) == "/":
+                    advance()
+                    advance()
+                    break
+                advance()
+            emit("COMMENT", start_pos, start_i)
+            continue
+
+        # directive (#include, #calc ...)
+        if ch == "#":
+            advance()
+            while i < n and not peek().isspace() and peek() not in PUNCT:
+                advance()
+            emit("DIRECTIVE", start_pos, start_i)
+            continue
+
+        # string "..."
+        if ch == '"':
+            advance()
+            while i < n:
+                if peek() == "\\" and peek(1):
+                    advance()
+                    advance()
+                    continue
+                if peek() == '"':
+                    advance()
+                    break
+                advance()
+            emit("STRING", start_pos, start_i)
+            continue
+
+        # punctuation
+        if ch in PUNCT:
+            advance()
+            emit("PUNCT", start_pos, start_i)
+            continue
+
+        # number (simple heuristic)
+        if ch.isdigit() or (ch in "+-" and peek(1).isdigit()):
+            advance()
+            while i < n and (peek().isalnum() or peek() in ".eE+-"):
+                advance()
+            emit("NUMBER", start_pos, start_i)
+            continue
+
+        # word (OpenFOAM identifiers, paths, keys)
+        advance()
+        while i < n:
+            c = peek()
+
+            # 진짜 delimiter만 중단
+            if c.isspace() or c in "{};":
+                break
+
+            # 주석 시작은 중단
+            if c == "/" and peek(1) in "/*":
+                break
+
+            advance()
+
+        emit("WORD", start_pos, start_i)
+
+    eof_pos = Position(line, col, i)
+    tokens.append(Token("EOF", "", eof_pos, eof_pos))
+    return tokens

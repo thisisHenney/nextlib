@@ -1,0 +1,57 @@
+# editor.py
+
+class FoamEditor:
+    def __init__(self, ast_root):
+        self.root = ast_root
+
+    def get_node(self, route):
+        # print("DEBUG ROOT:", type(self.root), self.root.__dict__)
+
+        node = self.root
+        for key in route:
+            # dict
+            if hasattr(node, "entries"):
+                entry = node.entries.get(key)
+                if entry is None:
+                    return None
+                node = entry.value_node
+                continue
+
+            # list
+            if hasattr(node, "items"):
+                if key.isdigit():
+                    idx = int(key)
+                    if idx >= len(node.items):
+                        return None
+                    node = node.items[idx].body
+                    continue
+
+                found = None
+                for item in node.items:
+                    if item.head == key:
+                        found = item.body
+                        break
+                if found is None:
+                    return None
+                node = found
+                continue
+
+            return None
+
+        return node
+
+    # 🔥 이게 핵심
+    def get(self, route, *, all=False, default=None):
+        node = self.get_node(route)
+        if node is None:
+            return default
+        return self._unwrap(node)
+
+    def _unwrap(self, node):
+        if hasattr(node, "value"):
+            return node.value
+        if hasattr(node, "entries"):
+            return {k: self._unwrap(v.value_node) for k, v in node.entries.items()}
+        if hasattr(node, "items"):
+            return [self._unwrap(i.body) for i in node.items]
+        return None

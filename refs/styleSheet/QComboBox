@@ -1,0 +1,10 @@
+
+### for Ubuntu (not work on Windows) -------------------------------------------
+QComboBox{
+	combobox-popup: 0;
+}
+QComboBox::hover{
+	background-color: #c5dbed
+}
+
+

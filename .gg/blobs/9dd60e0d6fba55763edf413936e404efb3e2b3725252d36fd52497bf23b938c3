@@ -1,0 +1,393 @@
+import fnmatch
+import os
+import shutil
+from datetime import datetime
+from pathlib import Path
+from typing import Sequence
+from nextlib.widgets.messagebox import messagebox_error
+
+# 변수 참고
+# path      : 파일, 디렉토리 둘 다 또는 모호할 때 (ex) "./logs"
+# file_path : (디렉토리가 포함된)파일이름        (ex) "C:/data/config.json"
+# dir_path  : 디렉토리만                      (ex) "C:/data/"
+
+# def to_abs_path(path: Path | str) -> str:   # 프로그램 기준으로 상대경로를 정함
+#     return str(Path(path).expanduser().resolve())
+
+def check_path(path: str | None) -> str:
+    if not path:
+        return ""
+    if not (is_file(path) or is_dir(path)):
+        return ""
+    return str(Path(path).resolve())
+
+def is_opened(file_path: Path | str):
+    p = Path(file_path)
+    try:
+        with open(p, 'r+') as file:
+            file.close()
+        return False
+    except IOError:
+        return True
+
+def is_file(file_path: Path | str) -> bool:
+    return Path(file_path).is_file()
+
+def is_dir(dir_path: Path | str) -> bool:
+    return Path(dir_path).is_dir()
+
+def is_dir_empty(dir_path: Path | str) -> bool:
+    return not find_all(dir_path)
+
+def get_file_size(file_path: Path | str) -> int:
+    return Path(file_path).stat().st_size
+
+def get_file_time(file_path: Path | str, mode='create'):
+    p = Path(file_path)
+    stat = p.stat()
+
+    if mode == 'access':
+        get_time = stat.st_atime
+    elif mode == 'modify':
+        get_time = stat.st_mtime
+    else:  # 'create'
+        get_time = stat.st_ctime
+
+    return datetime.fromtimestamp(get_time)
+
+def read_file(file_path: Path | str, encoding='utf-8') -> str:
+    p = Path(file_name)
+    if not p.is_file():
+        return ''
+    with p.open('r', encoding=encoding) as f:
+        return f.read()
+
+def read_file_all_lines(file_path: Path | str) -> list[str]:
+    p = Path(file_path)
+    if p.is_file():
+        with p.open('r', encoding='utf-8') as f:
+            lines = f.readlines()
+        return lines
+    return []
+
+def read_file_lines(file_path: Path | str,
+                    start: int = 0, length: int = 0,
+                    remove_return_line: bool = True) -> list[str]:
+    p = Path(file_path)
+    if not p.is_file():
+        return []
+
+    lines = p.read_text(encoding='utf-8').splitlines(keepends=not remove_return_line)
+    total = len(lines)
+
+    if start < 0:
+        start = total + start
+    if start >= total:
+        return []
+
+    end = start + length if length > 0 else total
+    return lines[start:end]
+
+def write_file(file_path: Path | str, data: str) -> bool:
+    p = Path(file_path)
+    p.parent.mkdir(parents=True, exist_ok=True)  # 상위 디렉토리 자동 생성
+    p.write_text(data, encoding='utf-8')
+    return True
+
+def write_list_file(file_path: Path | str, data: Sequence[str], encoding='utf=8') -> bool:
+    p = Path(file_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+
+    # 각 줄 끝에 개행이 없으면 자동으로 추가
+    with p.open('w', encoding=encoding) as f:
+        for line in data:
+            if not line.endswith('\n'):
+                f.write(line + '\n')
+            else:
+                f.write(line)
+    return True
+
+def append_file(file_path: Path | str, data: str, add_return: bool = False) -> bool:
+    p = Path(file_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+
+    with p.open('a', encoding='utf-8') as f:
+        if add_return:
+            f.write('\n')
+        f.write(data)
+    return True
+
+def split_file_path(file_path: Path | str) -> tuple[str, str]:
+    p = Path(file_path)
+    return str(p.parent), p.name
+
+
+def get_current_dir(file_path: Path | str) -> str:
+    p = Path(file_path).expanduser().resolve()
+    return str(p if p.is_dir() else p.parent)
+
+def get_parent_dir(file_path: Path | str) -> str:
+    p = Path(file_path).expanduser().resolve()
+    return str(p.parent if p.is_dir() else p.parent.parent)
+
+def get_file_path(file_path: Path | str, upper: int = 0) -> str:
+    # 상위 경로 반환 (upper=0: 현재 폴더, upper>= 1: 상위 폴더)
+    path = Path(file_path).expanduser().resolve()
+    if path.is_file():
+        path = path.parent
+    for _ in range(upper):
+        path = path.parent
+    return str(path)
+
+def get_file_name_ext(file_path: Path | str) -> str:
+    return Path(file_path).name
+
+
+def get_file_name(file_path: Path | str) -> str:     # path/name.ext -> name
+    return Path(file_path).stem
+
+def get_file_ext(file_path: Path | str) -> str:     # path/name.ext -> ext
+    return Path(file_path).suffix.replace('.', '').lower()
+
+def get_drive_name(file_path: Path | str) -> str:   # only for Windows
+    path = Path(file_path).expanduser().resolve()
+    return path.drive
+
+def find_items(path: str | Path = '.', option: str = '*', mode: str = 'all',  # 'file', 'dir', 'all'
+                recursive: bool = True, include_path: bool = True, sorting: bool = True
+    ) -> list[str]:
+    base = Path(path).expanduser().resolve()
+
+    if recursive:
+        items = list(base.rglob('*'))
+    else:
+        items = list(base.iterdir())
+
+    if mode == 'file':
+        items = [p for p in items if p.is_file()]
+    elif mode == 'dir':
+        items = [p for p in items if p.is_dir()]
+
+    if option == '*' or not option:
+        found = [str(p) if include_path else p.name for p in items]
+    elif '*' in option or '?' in option:
+        found = [
+            str(p) if include_path else p.name
+            for p in items
+            if fnmatch.fnmatch(p.name.lower(), option.lower())
+        ]
+    else:
+        found = [
+            str(p) if include_path else p.name
+            for p in items
+            if option.lower() in p.name.lower()
+        ]
+
+    if sorting:
+        found.sort()
+    return found
+
+def check_file_ext(file_path, exts) -> bool:
+    if not isinstance(exts, (list, tuple)):
+        return False
+
+    ext = Path(file_path).suffix.lower().lstrip('.')
+    return ext in {e.lower().lstrip('.') for e in exts}
+
+def make_dir(dir_path: Path | str, exist_ok: bool = True) -> bool:
+    try:
+        p = Path(dir_path).expanduser().resolve()
+        p.mkdir(parents=True, exist_ok=exist_ok)
+        return True
+    except FileExistsError:
+        print(f"Directory already exists: {p}")
+    except PermissionError:
+        print(f"Permission denied: {p}")
+    except OSError as e:
+        print(f"Failed to create directory: {p}\n{e}")
+    return False
+
+def delete_items(paths: str | list[str] | tuple[str], ignore_errors: bool = True) -> None:
+    if isinstance(paths, (str, Path)):
+        paths = [paths]
+    elif isinstance(paths, (list, tuple)):
+        paths = list(paths)
+    else:
+        raise TypeError("paths must be str, Path, list, or tuple")
+
+    for p in paths:
+        path = Path(str(p)).expanduser().resolve()
+
+        if not str(path) or path == Path("/") or str(path) in ("//", "\\", "C:\\"):
+            print(f"[Error] Cannot delete directory: {path}")
+            continue
+
+        if not path.exists():
+            continue
+
+        if path.is_file() or path.is_symlink():
+            path.unlink(missing_ok=True)
+        elif path.is_dir():
+            shutil.rmtree(path, ignore_errors=ignore_errors)
+
+def move_files(src_dir, dest_dir, pattern='*'):
+    copy_or_move_items(src_dir, dest_dir, pattern, action='move')
+
+
+def move_files(src_dir, dest_dir, pattern='*'):
+    copy_or_move_items(src_dir, dest_dir, pattern, action='copy')
+
+def copy_or_move_items(src: str | Path, dst: str | Path, pattern: str = "*", action: str = 'copy') -> None:
+    src = Path(src).expanduser().resolve()
+    dest = Path(dest).expanduser().resolve()
+
+    if not src.exists():
+        print(f"Source path not found: {src}")
+        return
+    if not pattern:
+        pattern = '*'
+
+    if src.is_file():
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if action == 'copy':
+            shutil.copy2(src, dest)
+        elif action == 'move':
+            shutil.move(src, dest)
+        return
+
+    for root, _, files in os.walk(src):
+        root_path = Path(root)
+        rel_path = root_path.relative_to(src)
+        dest_path = dest / rel_path
+        dest_path.mkdir(parents=True, exist_ok=True)
+
+        for file_name in files:
+            if fnmatch.fnmatch(file_name, pattern):
+                src_file = root_path / file_name
+                dest_file = dest_path / file_name
+
+                if action == 'copy':
+                    shutil.copy2(src_file, dest_file)
+                elif action == 'move':
+                    shutil.move(src_file, dest_file)
+
+    if action == 'move' and src.exists():
+        try:
+            shutil.rmtree(src)
+        except Exception as e:
+            print(f"[Error] Failed to remove source directory '{src}': {e}")
+
+
+def create_web_link_file(filename: str, url: str, path: str | Path = '.') -> Path:
+    # Create a Windows Internet Shortcut (.url) file that links to a web address.
+    if not url.lower().startswith(("http://", "https://")):
+        raise ValueError("Invalid URL. Must start with 'http://' or 'https://'.")
+
+    path = Path(path).expanduser().resolve()
+
+    if not filename.lower().endswith(".url"):
+        filename += ".url"
+    full_path = path / filename
+
+    try:
+        with open(full_path, "w", encoding="utf-8") as f:
+            f.write(f"[InternetShortcut]\nURL={url}\n")
+    except OSError as e:
+        print(f"Failed to create shortcut: {e}")
+        raise
+    return full_path
+
+# ------------------------------------------------------------------------------
+# Extra Functions (사용성이 없어서 주석처리함 함수들
+# ------------------------------------------------------------------------------
+# def is_link(file_name: Path | str) -> bool:
+#     return Path(file_name).is_symlink()
+
+# def get_temporary_path() -> str:
+#     import tempfile
+#     return tempfile.gettempdir()
+
+# ------------------------------------------------------------------------------
+# def find_items 함수와 동일하므로 일단 주석처리함
+# ------------------------------------------------------------------------------
+# def find_dirs(path: str | Path = '.', option: str = '*', recursive: bool = True,
+#     include_path: bool = True, sorting: bool = True) -> list[str]:
+#     base = Path(path).expanduser().resolve()
+#     if recursive:
+#         dirs = [p for p in base.rglob('*') if p.is_dir()]
+#     else:
+#         dirs = [p for p in base.iterdir() if p.is_dir()]
+#
+#     if option == '*' or not option:
+#         found = [str(p) if include_path else p.name for p in dirs]
+#     elif '*' in option or '?' in option:
+#         found = [
+#             str(p) if include_path else p.name
+#             for p in dirs
+#             if fnmatch.fnmatch(p.name.lower(), option.lower())
+#         ]
+#     else:
+#         found = [
+#             str(p) if include_path else p.name
+#             for p in dirs
+#             if option.lower() in p.name.lower()
+#         ]
+#     if sorting:
+#         found.sort()
+#     return found
+
+# def find_files(path: str | Path = '.', option: str = '*', recursive: bool = True,
+#     include_path: bool = True, sorting: bool = True) -> list[str]:
+#     base = Path(path).expanduser().resolve()
+#
+#     if recursive:
+#         files = [p for p in base.rglob('*') if p.is_file()]
+#     else:
+#         files = [p for p in base.iterdir() if p.is_file()]
+#
+#     if option == '*' or not option:
+#         found = [str(p) if include_path else p.name for p in files]
+#     elif '*' in option or '?' in option:
+#         found = [
+#             str(p) if include_path else p.name
+#             for p in files
+#             if fnmatch.fnmatch(p.name.lower(), option.lower())
+#         ]
+#     else:
+#         found = [
+#             str(p) if include_path else p.name
+#             for p in files
+#             if option.lower() in p.name.lower()
+#         ]
+#     if sorting:
+#         found.sort()
+#     return found
+
+# def find_all(path: str | Path = '.', option: str = '*', recursive: bool = True,
+#     include_path: bool = True, sorting: bool = True) -> list[str]:
+#     base = Path(path).expanduser().resolve()
+#
+#     if recursive:
+#         items = [p for p in base.rglob('*')]
+#     else:
+#         items = list(base.iterdir())
+#
+#     if option == '*' or not option:
+#         found = [str(p) if include_path else p.name for p in items]
+#     elif '*' in option or '?' in option:
+#         found = [
+#             str(p) if include_path else p.name
+#             for p in items
+#             if fnmatch.fnmatch(p.name.lower(), option.lower())
+#         ]
+#     else:
+#         found = [
+#             str(p) if include_path else p.name
+#             for p in items
+#             if option.lower() in p.name.lower()
+#         ]
+#
+#     if sorting:
+#         found.sort()
+#     return found
+# ------------------------------------------------------------------------------

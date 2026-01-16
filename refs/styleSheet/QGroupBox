@@ -1,0 +1,68 @@
+### 기본 그룹 박스 (General style) ------------------------------------------------
+ - font size: 8
+ - font bold : check
+ - layoutMargin(L/T/R/B): 9/12/9/6
+
+QGroupBox {
+	border: 1 solid;          /* 경계선 두께, 선 모양, (색깔) */
+	border-radius: 6;           /* 경계선 라운드 크기 */
+	margin-top: 9;              /* 타이틀과 경계선 사이 거리, border에 따라 변경*/
+	border-color : #c8c8c8;     /* 경계선 색 */
+	padding: 3;                 /* 내부 위젯들과 경계선 사이 거리 */
+}
+QGroupBox::title {
+	subcontrol-origin: margin;  /* 필수 : 타이틀 위치 */
+	subcontrol-position: top left;     /* top: 타이틀 위치[top/bottom], center: 글자 위치[left/center/right] */
+	left: 10;                  /* 왼쪽에 빈칸을 얼마정도로 둘 것 인지, right 로도 가능 */
+	padding: 2 3;           /* font: 10일 때 5, 9일 때 3, 상황에 따라 조절 */
+}
+
+
+QGroupBox {
+    border: 1 solid;
+    border-radius: 6;
+    margin-top: 9;
+    border-color : #c8c8c8;
+    padding: 3;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 10;
+    padding: 2 3;
+}
+
+### 그룹박스 타이틀을 위쪽 (Ribbon style) -------------------------------------------
+ - font size: 10
+ - font bold: check
+ - layoutMargin(L/T/R/B): 9/12/9/9
+
+QGroupBox {
+	border: 3 solid;
+	border-radius: 6;
+	margin-top: 9;
+	border-color : #969696;
+	padding: 3;
+}
+QGroupBox::title {
+	subcontrol-origin: margin;
+    subcontrol-position: top center;
+	padding: 0 3 0 3;
+}
+
+### 그룹박스 타이틀을 아래쪽 (Ribbon style) -----------------------------------------
+ - font size: 10
+ - layoutMargin(L/T/R/B): defaults
+
+QGroupBox {
+	border: 3 solid gray;
+	border-radius: 6;
+	margin-bottom: 4;
+	border-color : #969696;
+	padding: 3;
+}
+QGroupBox::title {
+	subcontrol-origin: margin;
+    subcontrol-position: bottom center;
+	padding: 0 3 0 3;
+}

@@ -1,0 +1,80 @@
+import re
+from typing import Tuple, Optional
+
+
+def change_key_name(content: str, old_key: str, new_key: str) -> str:
+    """
+    OpenFOAM controlDict에서 키 이름 변경
+    - 탭 → 4칸 스페이스 변환
+    - 값 시작 위치 고정 (짧은 키)
+    - 긴 키: 키 + " " + 값 (한 칸만 띄움)
+    """
+    # 1단계: 모든 탭을 4칸 스페이스로 변환
+    content = content.expandtabs(4)
+
+    def replace_key_match(match: re.Match) -> str:
+        key_part = match.group(1)  # "startFrom"
+        spaces = match.group(2)  # 공백들
+        value_part = match.group(3)  # "startTime; // 주석"
+
+        # 원본에서 값 시작 위치 계산 (키+공백 길이)
+        original_value_start = len(key_part + spaces)
+
+        new_len = len(new_key)
+
+        if new_len < original_value_start:
+            # 새 키가 짧음: 원본 값 시작 위치까지 공백 채움
+            spaces_count = original_value_start - new_len
+            new_spaces = " " * spaces_count
+            return f"{new_key}{new_spaces}{value_part}"
+        else:
+            # 새 키가 길거나 같음: 키 + 한 칸 + 값
+            return f"{new_key} {value_part}"
+
+    # 패턴: 키명 + 공백1개이상 + 값(+주석)까지
+    pattern = rf'(\b{re.escape(old_key)}\b)([ \t]+)(.*)'
+    new_content = re.sub(pattern, replace_key_match, content, flags=re.MULTILINE)
+
+    return new_content
+
+
+# 테스트 함수
+def test_change_key():
+    """테스트 케이스"""
+    original = """startFrom       startTime;	// 여기는 주석입니다.
+endTime         0.5;
+deltaT          0.01;
+"""
+
+    print("=== 원본 ===")
+    print(repr(original))
+    print("시각화:")
+    print(original)
+    print()
+
+    # 테스트 1: 짧은 키 (값 위치 고정)
+    result1 = change_key_name(original, "startFrom", "start")
+    print("=== startFrom → start (값 위치 고정) ===")
+    print(repr(result1))
+    print("시각화:")
+    print(result1)
+    print()
+
+    # 테스트 2: 긴 키 (한 칸만 띄움)
+    result2 = change_key_name(original, "startFrom", "startFromNewLonger")
+    print("=== startFrom → startFromNewLonger (한 칸 띄움) ===")
+    print(repr(result2))
+    print("시각화:")
+    print(result2)
+    print()
+
+    # 테스트 3: 같은 길이 (한 칸 띄움)
+    result3 = change_key_name(original, "startFrom", "beginAt")
+    print("=== startFrom → beginAt (한 칸 띄움) ===")
+    print(repr(result3))
+    print("시각화:")
+    print(result3)
+
+
+if __name__ == "__main__":
+    test_change_key()

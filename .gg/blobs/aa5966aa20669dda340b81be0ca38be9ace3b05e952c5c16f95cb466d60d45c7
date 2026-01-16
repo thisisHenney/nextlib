@@ -1,0 +1,54 @@
+# foamdict/editor.py
+from nextlib.openfoam.PyFoamDict4.foam_ast import *
+
+class FoamEditor:
+    def __init__(self, ast: DictValue):
+        self.root = ast
+
+    def get(self, route, *, all=False, default=None):
+        """
+        Safe get:
+        - key not found -> default (None)
+        - index out of range -> default
+        """
+        node = self.root
+
+        for r in route:
+            # dict access
+            if isinstance(r, str):
+                if not isinstance(node, DictValue):
+                    return default
+
+                if r not in node.entries:
+                    return [] if all else default
+
+                vals = node.entries[r]
+                node = vals if all else vals[0]
+
+            # list access
+            elif isinstance(r, int):
+                if not isinstance(node, ListValue):
+                    return default
+                if r < 0 or r >= len(node.items):
+                    return default
+                node = node.items[r]
+
+            else:
+                return default
+
+        return node
+
+    def set(self, route, value):
+        parent = self.get(route[:-1])
+        key = route[-1]
+        parent.entries[key] = [value]
+
+    def add(self, route, value):
+        parent = self.get(route[:-1])
+        key = route[-1]
+        parent.entries.setdefault(key, []).append(value)
+
+    def remove(self, route):
+        parent = self.get(route[:-1])
+        del parent.entries[route[-1]]
+

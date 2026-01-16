@@ -1,0 +1,216 @@
+from nextlib.openfoam.foamcase.internal.cst import (
+    CSTToken, CSTDict, CSTList, CSTSeq, CSTCompound
+)
+
+NO_VALUE = object()
+
+class ASTList:
+    def __init__(self):
+        self.items = []
+
+class ASTCompound:
+    def __init__(self, head, body, *, cst_node=None):
+        self.head = head
+        self.body = body
+        self.cst_node = cst_node
+
+class ASTDict:
+    def __init__(self, *, cst_node=None):
+        self.entries = {}
+        self.cst_node = cst_node
+
+class ASTEntry:
+    def __init__(self, key, value_node, *, cst_entry=None):
+        self.key = key
+        self.value_node = value_node
+        self.cst_entry = cst_entry
+
+class ASTValue:
+    def __init__(self, value, *, cst_node=None):
+        self.value = value
+        self.cst_node = cst_node
+
+
+
+def build_ast(cst_node):
+    if hasattr(cst_node, "node"):
+        return build_ast(cst_node.node)
+
+    if hasattr(cst_node, "entries"):
+        ast = ASTDict(cst_node=cst_node)
+
+        for entry in cst_node.entries:
+            if entry.value_node is None:
+                value_node = ASTValue(NO_VALUE)
+            else:
+                value_node = build_ast(entry.value_node)
+
+            ast.entries[entry.key_token.text] = ASTEntry(
+                key=entry.key_token.text,
+                value_node=value_node,
+                cst_entry=entry
+            )
+        return ast
+
+    if hasattr(cst_node, "items"):
+        items = cst_node.items
+        n = len(items)
+
+        if all(isinstance(it, CSTCompound) for it in cst_node.items):
+            items = cst_node.items
+
+            if all(isinstance(it.body, CSTDict) for it in items):
+                ast = ASTList()
+                for it in items:
+                    ast.items.append(
+                        ASTCompound(
+                            head=it.head.text,
+                            body=build_ast(it.body),
+                            cst_node=it.body
+                        )
+                    )
+                return ast
+
+            ast = ASTDict(cst_node=cst_node)
+            for it in items:
+                child_ast = build_ast(it.body)
+                if hasattr(child_ast, "entries"):
+                    child_ast.cst_node = it.body
+                ast.entries[it.head.text] = ASTEntry(
+                    key=it.head.text,
+                    value_node=child_ast,
+                    cst_entry=None
+                )
+            return ast
+
+        is_named_dict = (
+                n % 2 == 0 and
+                all(
+                    isinstance(items[i], CSTToken) and
+                    isinstance(items[i + 1], CSTDict)
+                    for i in range(0, n, 2)
+                )
+        )
+
+        if is_named_dict:
+            ast = ASTDict(cst_node=cst_node)
+
+            for i in range(0, n, 2):
+                key_tok = items[i]
+                body = items[i + 1]
+
+                child_ast = build_ast(body)
+
+                if hasattr(child_ast, "entries"):
+                    child_ast.cst_node = body
+
+                ast.entries[key_tok.text] = ASTEntry(
+                    key=key_tok.text,
+                    value_node=child_ast,
+                    cst_entry=None
+                )
+
+            return ast
+
+        compounds = []
+        i = 0
+        while i < n - 1:
+            head = items[i]
+            body = items[i + 1]
+            if isinstance(head, CSTToken) and isinstance(body, (CSTDict, CSTList)):
+                compounds.append((head, body))
+                i += 2
+                continue
+            break
+
+        if compounds and i == n:
+            ast = ASTList()
+            for head, body in compounds:
+                ast.items.append(
+                    ASTCompound(
+                        head=head.text,
+                        body=build_ast(body),
+                        cst_node=body
+                    )
+                )
+            return ast
+
+        scalar_values = []
+        for it in items:
+            if isinstance(it, CSTToken):
+                scalar_values.append(it.text)
+
+            elif isinstance(it, CSTSeq):
+                parts = it.parts
+                if (
+                        len(parts) == 2
+                        and isinstance(parts[0], CSTToken)
+                        and parts[0].text.isdigit()
+                        and isinstance(parts[1], CSTList)
+                ):
+                    scalar_values.append(build_ast(parts[1]).value)
+                else:
+                    scalar_values.append(" ".join(
+                        p.text for p in parts if isinstance(p, CSTToken)
+                    ))
+
+            else:
+                v = build_ast(it)
+                if isinstance(v, ASTValue):
+                    scalar_values.append(v.value)
+                else:
+                    scalar_values.append(v)
+
+        return ASTValue(value=scalar_values, cst_node=cst_node)
+
+    if isinstance(cst_node, CSTSeq):
+        parts = cst_node.parts
+        if (
+                len(parts) == 2
+                and isinstance(parts[0], CSTToken)
+                and parts[0].text.isdigit()
+                and isinstance(parts[1], CSTList)
+        ):
+            return build_ast(parts[1])
+
+        scalar_values = []
+        for p in parts:
+            if isinstance(p, CSTToken):
+                scalar_values.append(p.text)
+            else:
+                v = build_ast(p)
+                if isinstance(v, ASTValue):
+                    scalar_values.append(v.value)
+                else:
+                    scalar_values.append(v)
+
+        if len(scalar_values) == 1:
+            value = scalar_values[0]
+            if value == "true":
+                value = True
+            elif value == "false":
+                value = False
+            return ASTValue(value=value, cst_node=cst_node)
+
+        if (
+                len(scalar_values) >= 2
+                and scalar_values[0] == "["
+                and scalar_values[-1] == "]"
+        ):
+            scalar_values = scalar_values[1:-1]
+
+        return ASTValue(value=scalar_values, cst_node=cst_node)
+
+    if hasattr(cst_node, "text"):
+        text = cst_node.text
+
+        if text == "true":
+            value = True
+        elif text == "false":
+            value = False
+        else:
+            value = text
+
+        return ASTValue(value=value, cst_node=cst_node)
+
+    return ASTValue(value=None, cst_node=cst_node)

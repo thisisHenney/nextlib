@@ -1,0 +1,81 @@
+from nextlib.openfoam.foamcase.internal.ast import NO_VALUE, ASTValue
+
+
+class FoamEditor:
+    def __init__(self, ast_root):
+        self.root = ast_root
+
+    def get_node(self, route):
+
+        node = self.root
+        for key in route:
+            if hasattr(node, "entries"):
+                entry = node.entries.get(key)
+                if entry is None:
+                    return None
+                node = entry.value_node
+                continue
+
+            if hasattr(node, "items"):
+                if key.isdigit():
+                    idx = int(key)
+                    if idx >= len(node.items):
+                        return None
+                    node = node.items[idx].body
+                    continue
+
+                found = None
+                for item in node.items:
+                    if item.head == key:
+                        found = item.body
+                        break
+                if found is None:
+                    return None
+                node = found
+                continue
+
+            return None
+
+        return node
+
+    def get(self, route, *, all=False, default=None):
+        node = self.get_node(route)
+        if node is None:
+            return default
+        return self._unwrap(node)
+
+    def _unwrap(self, node):
+        if isinstance(node, ASTValue):
+            if node.value is NO_VALUE:
+                return None
+            return node.value
+
+        if hasattr(node, "entries"):
+            if (
+                    all(
+                        isinstance(v.value_node, ASTValue)
+                        and v.value_node.value is NO_VALUE
+                        for v in node.entries.values()
+                    )
+                    and not hasattr(node.cst_node, "items")
+            ):
+                return list(node.entries.keys())
+
+            return {
+                k: self._unwrap(v.value_node)
+                for k, v in node.entries.items()
+            }
+
+        if hasattr(node, "items"):
+            # ASTCompound list (e.g. boundary patches)
+            if all(hasattr(i, "head") for i in node.items):
+                return {
+                    i.head: self._unwrap(i.body)
+                    for i in node.items
+                }
+
+            return [self._unwrap(i.body) for i in node.items]
+
+        return None
+
+

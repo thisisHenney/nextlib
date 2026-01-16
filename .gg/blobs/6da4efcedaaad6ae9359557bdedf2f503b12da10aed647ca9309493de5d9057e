@@ -1,0 +1,42 @@
+from FoamData import FoamData
+
+if __name__ == "__main__":
+    # Office
+    # path = rf"C:/Users/thisi/OneDrive/바탕 화면/FoamCase/system/controlDict"
+    # path = rf"C:\Users\thisi\OneDrive\바탕 화면\FoamCase\system\fluid\fvSchemes"
+    # path = rf"C:\Users\thisi\OneDrive\바탕 화면\FoamCase\system\controlDict"
+    # path = rf"C:\Users\thisi\OneDrive\바탕 화면\FoamCase\constant\fluid\polyMesh\boundary"
+
+    # Home
+    # root_path = rf"C:\Users\thisi\OneDrive\바탕 화면\TestCase\TestchemkinCase"
+    root_path = rf"C:\Users\thisi\OneDrive\바탕 화면\TestCase\simplefoam"
+    file_path = rf"\constant\polyMesh\boundary"
+    # file_path = rf"\system\blockMeshDict"
+    # file_path = rf"\system\controlDict"
+    # file_path = rf"\system\fvSchemes"
+    # file_path = rf"\system\fvSolution"
+
+    path = root_path + file_path
+    fd = FoamData(path)
+
+    all_data = fd.get([])  # 루트 전체
+    # print(all_data)
+    print(all_data['2'])
+    # print(all_data['2'][1][1]['inGroups'])
+
+    # fd.set(
+    #     route=["2", "upperWall", "inGroups"],
+    #     value=["inlet", "patch"]
+    # )
+    # fd.set(
+    #     route=["2", "upperWall", "inGroups"],
+    #     value=["2", ["wall", "empty"]],
+    # )
+    # 수정
+    # fd.set(
+    #     ["actions", 0, "patch"],
+    #     "fluid_to_thruster_NEW"
+    # )
+    #
+    # fd.save()
+

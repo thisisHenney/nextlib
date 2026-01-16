@@ -1,0 +1,144 @@
+import re
+
+
+def delete_key(content: str, key_name: str) -> str:
+    """키(블록/단순) 삭제 + 주변 빈 줄 정리"""
+    content = content.expandtabs(4)
+    content = delete_block(content, key_name)
+    content = delete_simple_key(content, key_name)
+    content = clean_empty_lines(content)
+    return content
+
+
+def delete_block(content: str, block_name: str) -> str:
+    """
+    block_name 으로 시작하는 블록 전체 삭제
+    예)
+        probes1
+        {
+            ...
+        }
+    를 통째로 제거
+    """
+    lines = content.split('\n')
+    new_lines = []
+    i = 0
+    n = len(lines)
+
+    while i < n:
+        line = lines[i]
+        stripped = line.strip()
+
+        # 이 줄이 "probes1" 같은 블록 시작 키인가?
+        if re.match(rf'^{re.escape(block_name)}\s*$', stripped):
+            # 이 줄부터 블록 전체 스킵
+            i += 1
+
+            # 다음 줄이 { 로 시작하는지 확인
+            if i < n and lines[i].strip().startswith('{'):
+                brace_level = 0
+
+                # '{' 포함 줄부터 스캔
+                while i < n:
+                    open_braces = lines[i].count('{')
+                    close_braces = lines[i].count('}')
+                    brace_level += open_braces - close_braces
+
+                    i += 1
+                    if brace_level <= 0:
+                        break
+
+                # 블록 뒤에 오는 연속 빈 줄도 정리 대상이므로
+                while i < n and lines[i].strip() == '':
+                    i += 1
+
+                # 여기까지가 probes1 블록 + 그 아래 빈 줄들 → 전부 건너뜀
+                continue
+
+            else:
+                # 혹시라도 `{` 없이 단독 키였다면 그냥 한 줄만 제거
+                # (이미 i+=1 했으니 계속 진행)
+                while i < n and lines[i].strip() == '':
+                    i += 1
+                continue
+
+        # 그 외 라인은 유지
+        new_lines.append(line)
+        i += 1
+
+    return '\n'.join(new_lines)
+
+
+def delete_simple_key(content: str, key_name: str) -> str:
+    """한 줄짜리 키 삭제 (예: startFrom       startTime;)"""
+
+    def is_key_line(line: str) -> bool:
+        pattern = r'^\s*' + re.escape(key_name) + r'\b'
+        return bool(re.match(pattern, line))
+
+    lines = content.split('\n')
+    new_lines = []
+
+    for line in lines:
+        if is_key_line(line.rstrip()):
+            continue
+        new_lines.append(line)
+
+    return '\n'.join(new_lines)
+
+
+def clean_empty_lines(content: str) -> str:
+    """
+    - 연속 빈 줄을 1줄로 축소
+    - 파일 앞/뒤 불필요한 빈 줄 제거
+    """
+    lines = content.split('\n')
+    cleaned = []
+    prev_empty = False
+
+    for line in lines:
+        if line.strip() == '':
+            if not prev_empty:
+                cleaned.append('')
+            prev_empty = True
+        else:
+            cleaned.append(line)
+            prev_empty = False
+
+    # 끝쪽 불필요한 빈 줄 제거
+    while len(cleaned) > 1 and cleaned[-1].strip() == '':
+        cleaned.pop()
+
+    return '\n'.join(cleaned) + '\n'
+
+
+# 테스트
+if __name__ == "__main__":
+    original = """functions
+{
+    probes1
+    {
+        type            probes;
+        libs            ("libsampling.so");
+        fields          (p U);
+    }
+
+    probes2
+    {
+        type            probes;
+    }
+}
+"""
+    print("=== 원본 ===")
+    print(original)
+    print("=== probes1 삭제 후 ===")
+    print(delete_key(original, "probes1"))
+그럼 add_value("rDeltaTSmoothingCoeff table", [[0,0.0001],[100, 0.001],[200, 0.025]]) 이런식으로 추가하면
+rDeltaTSmoothingCoeff table
+(
+    (  0 0.0001)
+    (100 0.001)
+    (200 0.025)
+);
+이렇게 추가되게 하고,
+ add_value_table("libs",

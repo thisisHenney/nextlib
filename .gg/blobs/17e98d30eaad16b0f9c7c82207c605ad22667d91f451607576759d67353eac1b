@@ -1,0 +1,109 @@
+# test.py
+from nextlib.openfoam.PyFoamDict5.api import FoamDict
+
+# Office
+root_path = rf"C:\Users\thisi\OneDrive\바탕 화면\FoamCase"
+
+# Home
+# root_path = rf"C:\Users\thisi\OneDrive\바탕 화면\TestCase\TestchemkinCase"
+root_path = rf"C:\Users\thisi\OneDrive\바탕 화면\TestCase\simplefoam"
+
+# file_path = rf"/constant/fluid/polyMesh/boundary"
+# file_path = rf"/constant/polyMesh/boundary"
+# file_path = rf"/system/fluid/fvSchemes"
+# file_path = rf"\system\fvSchemes"
+# file_path = rf"\system\blockMeshDict"
+
+
+if __name__ == "__main__":
+    # main()
+
+# def main():
+    show_all = False    # True, False
+    is_controlDict = False
+    is_fvSchemes = True
+    is_boundary = False
+    is_blockMeshDict = False
+
+    # ControlDict
+    if show_all or is_controlDict:
+        print('### ControlDict ------------------------')
+        path = root_path + rf"\system\controlDict"
+        fd = FoamDict(path)
+        all_data = fd.get([])  # 루트 전체
+
+        # print(all_data)  # 전체 최상위 키 확인
+        # print(all_data['libs'])
+        # print(all_data['posYR'])
+        # print(all_data['rDeltaTDampingCoeff'])
+
+        # fd.set(["rDeltaTDampingCoeff"], "constant 0.8")
+        # fd.set(["libs"], value=['"libmyLiquids8.so"','"libcompressibleTools.so"'], before="libs3")
+        # fd.set(["libs"], ['"lib2.so"','"lib1.so"'])
+
+        #fd.set(["writeInterval"], "200")
+
+        # print(all_data['writeInterval'])
+        # fd.delete(["writeInterval"])
+
+        # print(all_data['writeInterval'])
+        # fd.save()
+
+    # fvSchemes
+    if show_all or is_fvSchemes:
+        print('### fvSchemes ------------------------')
+        # path = root_path + rf"\system\fluid\fvSchemes"
+        path = root_path + rf"\system\fvSchemes"
+        fd = FoamDict(path)
+        all_data = fd.get([])  # 루트 전체
+        print(all_data)  # 전체 최상위 키 확인
+        print(all_data['gradSchemes'])
+        print(all_data['divSchemes']['div(phi,U)'])
+        print(all_data['divSchemes']['div((nuEff*dev2(T(grad(U)))))'])
+
+        fd.remove(["laplacianSchemes", "default"])
+        fd.save()
+
+    # boundary
+    if show_all or is_boundary:
+        print('### boundary ------------------------')
+        path = root_path + rf"\constant\polyMesh\boundary"
+        fd = FoamDict(path)
+        all_data = fd.get([])  # 루트 전체
+        # print(fd.get(["2", "upperWall", "type"]))
+        # print(fd.get(["2", "upperWall", "inGroups"]))
+
+        print(all_data)
+        print(all_data['2']['inlet'])
+        print(all_data['2']['upperWall'])
+        print(all_data['2']['upperWall']['inGroups'])
+        print(all_data['2']['upperWall']['type'])
+
+        # fd.set(
+        #     route=["2", "inlet", "nFaces"],
+        #     value=40
+        # )
+        # fd.insert(
+        #     route=["2", "inlet"],
+        #     key="newFaces",
+        #     value=40
+        # )
+        # fd.insert(
+        #     route=["2", "inlet"],
+        #     key="inGroups",
+        #     value=["patch", "fluid", "empty"]
+        # )
+        # fd.set(
+        #     route=["2", "inlet", "type1"],
+        #     value="patch",
+        #     before="__first__"
+        # )
+        # fd.save()
+
+    # blockMeshDict
+    if show_all or is_blockMeshDict:
+        print('### blockMeshDict ------------------------')
+        path = root_path + rf"\system\blockMeshDict"
+        fd = FoamDict(path)
+        all_data = fd.get([])  # 루트 전체
+        print(all_data)

@@ -1,0 +1,28 @@
+# rewriter.py
+import re
+
+
+class Rewriter:
+    def __init__(self, text: str):
+        self.text = text
+        self.patches = []
+
+    def replace(self, span_start, span_end, new_text):
+        self.patches.append((span_start, span_end, new_text))
+
+    def insert(self, pos, new_text):
+        """
+        Insert text at position pos.
+        Equivalent to replace(pos, pos, new_text).
+        """
+        self.patches.append((pos, pos, new_text))
+
+    def apply(self):
+        out = self.text
+        for s, e, t in sorted(self.patches, reverse=True):
+            out = out[:s] + t + out[e:]
+
+        # 🔥 연속 빈 줄 정규화 (최대 1줄)
+        out = re.sub(r"\n{3,}", "\n\n", out)
+
+        return out

@@ -1,0 +1,585 @@
+"""
+OpenFOAM Dictionary 편집 모듈
+- change_key_name, delete_key, add_value, insert_value
+- inGroups 리스트 특수 처리 (change_key_value)
+- regions 튜플 형식 (add_value_tuple, change_value_tuple)
+- libs 멀티라인 리스트 (change_libs_list)
+"""
+
+import re
+from typing import Any, List, Optional, Tuple
+
+
+# ============================================================================
+# 공통 유틸리티 함수들
+# ============================================================================
+
+def _find_block_range_brace(lines: list[str], block_name: str) -> Tuple[Optional[int], Optional[int]]:
+    """name { ... } 또는 name ( ... ) 블록 범위 반환"""
+    n = len(lines)
+    start = None
+    for i, line in enumerate(lines):
+        if re.match(rf'^\s*{re.escape(block_name)}\b', line.strip()):
+            start = i
+            break
+    if start is None:
+        return (None, None)
+
+    i = start + 1
+    if i >= n:
+        return (None, None)
+
+    brace_level = 0
+    for j in range(i, n):
+        brace_level += lines[j].count('{') + lines[j].count('(')
+        brace_level -= lines[j].count('}') + lines[j].count(')')
+        if brace_level == 0:
+            return (start, j)
+    return (None, None)
+
+
+def _detect_value_column(line: str) -> Optional[int]:
+    """키 뒤 값 시작 컬럼 반환"""
+    if not line.strip() or line.strip().startswith('//') or line.strip() == '}':
+        return None
+
+    leading = len(line) - len(line.lstrip(' '))
+    tokens = line.strip().split()
+    if len(tokens) < 2:
+        return None
+
+    key_token = tokens[0]
+    key_index = line.find(key_token, leading)
+    if key_index == -1:
+        return None
+
+    i = key_index + len(key_token)
+    while i < len(line) and line[i] == ' ':
+        i += 1
+    return i if i < len(line) else None
+
+
+def _build_key_value_line(base_indent: str, key: str, val_str: str, value_col: Optional[int]) -> str:
+    """키-값 라인 생성 (컬럼 정렬)"""
+    if not val_str.endswith(';'):
+        val_str += ';'
+
+    key_part = base_indent + key
+    if value_col is None:
+        return f"{key_part}    {val_str}"
+    if len(key_part) >= value_col:
+        return f"{key_part} {val_str}"
+    spaces = ' ' * (value_col - len(key_part))
+    return f"{key_part}{spaces}{val_str}"
+
+
+# ============================================================================
+# 1. 기본 키 편집 함수들 (controlDict, boundary 등)
+# ============================================================================
+
+def change_key_name(content: str, old_key: str, new_key: str) -> str:
+    """키 이름만 변경 (값 위치 고정)"""
+    content = content.expandtabs(4)
+
+    def replace_match(match):
+        key_part, spaces, value_part = match.groups()
+        orig_value_start = len(key_part + spaces)
+        new_len = len(new_key)
+        if new_len < orig_value_start:
+            new_spaces = ' ' * (orig_value_start - new_len)
+            return f"{new_key}{new_spaces}{value_part}"
+        return f"{new_key} {value_part}"
+
+    pattern = rf'(\b{re.escape(old_key)}\b)([ \t]+)(.*)'
+    return re.sub(pattern, replace_match, content, flags=re.MULTILINE)
+
+
+def delete_key(content: str, key_name: str) -> str:
+    """키 또는 블록 삭제 + 빈 줄 정리"""
+    content = content.expandtabs(4)
+
+    # 블록 삭제 시도
+    content = _delete_block(content, key_name)
+    # 단순 키 삭제
+    content = _delete_simple_key(content, key_name)
+    return _clean_empty_lines(content)
+
+
+def _delete_block(content: str, block_name: str) -> str:
+    lines = content.split('\n')
+    new_lines = []
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if re.match(rf'^{re.escape(block_name)}\s*$', line):
+            i += 1
+            brace_level = 0
+            while i < len(lines):
+                open_braces = lines[i].count('{') + lines[i].count('(')
+                close_braces = lines[i].count('}') + lines[i].count(')')
+                brace_level += open_braces - close_braces
+                i += 1
+                if brace_level <= 0:
+                    break
+            continue
+        new_lines.append(lines[i])
+        i += 1
+    return '\n'.join(new_lines)
+
+
+def _delete_simple_key(content: str, key_name: str) -> str:
+    def is_key_line(line: str) -> bool:
+        return bool(re.match(rf'^\s*{re.escape(key_name)}\b', line))
+
+    lines = content.split('\n')
+    new_lines = []
+    i = 0
+    while i < len(lines):
+        if is_key_line(lines[i]):
+            i += 1
+            continue
+        new_lines.append(lines[i])
+        i += 1
+    return '\n'.join(new_lines)
+
+
+def _clean_empty_lines(content: str) -> str:
+    lines = content.split('\n')
+    cleaned = []
+    prev_empty = False
+    for line in lines:
+        if not line.strip():
+            if not prev_empty:
+                cleaned.append('')
+            prev_empty = True
+        else:
+            cleaned.append(line)
+            prev_empty = False
+    while len(cleaned) > 1 and not cleaned[-1].strip():
+        cleaned.pop()
+    return '\n'.join(cleaned) + '\n'
+
+
+# ============================================================================
+# 2. 블록 내 키 추가/변경 (inGroups 리스트 특수 처리)
+# ============================================================================
+
+def change_key_value(
+        content: str,
+        parent_block: str,
+        target_block: str,
+        key: str,
+        value: Any,
+) -> str:
+    """블록 내 키 값 변경 (inGroups 리스트 특수 처리)"""
+    content = content.expandtabs(4)
+    lines = content.split('\n')
+
+    # parent_block 범위 찾기
+    if parent_block.isdigit():
+        p_start, p_end = _find_number_parent(lines, parent_block)
+    else:
+        p_start, p_end = _find_block_range_brace(lines, parent_block)
+    if p_start is None:
+        return content
+
+    # target_block 범위 찾기
+    t_start, t_end = _find_named_block_in_range(lines, p_start, p_end, target_block)
+    if t_start is None:
+        return content
+
+    # key 줄 찾기/추가
+    key_idx = None
+    for i in range(t_start + 1, t_end):
+        if re.match(rf'^\s*{re.escape(key)}\b', lines[i]):
+            key_idx = i
+            break
+    if key_idx is None:
+        key_idx = t_end
+        base_indent = "        "
+        for i in range(t_start + 1, t_end):
+            m = re.match(r'^(\s*)\w+\b', lines[i])
+            if m:
+                base_indent = m.group(1)
+                break
+        lines.insert(key_idx, base_indent + key)
+    else:
+        m = re.match(r'^(\s*)', lines[key_idx])
+        base_indent = m.group(1) if m else ""
+
+    # inGroups 특수 처리
+    if key == "inGroups" and isinstance(value, (list, tuple)):
+        n = len(value)
+        group_str = " ".join(str(v) for v in value)
+        value_col = _detect_value_column(lines[key_idx]) if key_idx < len(lines) else None
+        val_str = f"{n} ( {group_str} )"
+        new_line = _build_key_value_line(base_indent, "inGroups", val_str, value_col)
+    else:
+        val_str = str(value).strip()
+        value_col = None
+        for i in range(key_idx - 1, t_start, -1):
+            col = _detect_value_column(lines[i])
+            if col:
+                value_col = col
+                break
+        new_line = _build_key_value_line(base_indent, key, val_str, value_col)
+
+    lines[key_idx] = new_line
+    return '\n'.join(lines) + '\n'
+
+
+def add_value(
+        content: str,
+        parent_block: str,
+        target_block: str,
+        key: str,
+        value: Any | None = None,
+) -> str:
+    """블록 끝에 키 추가 (value=None → 빈 블록 { })"""
+    content = content.expandtabs(4)
+    lines = content.split('\n')
+
+    if parent_block.isdigit():
+        p_start, p_end = _find_number_parent(lines, parent_block)
+    else:
+        p_start, p_end = _find_block_range_brace(lines, parent_block)
+    if p_start is None:
+        return content
+
+    t_start, t_end = _find_named_block_in_range(lines, p_start, p_end, target_block)
+    if t_start is None:
+        return content
+
+    m = re.match(r'^(\s*)', lines[t_start])
+    base_indent = (m.group(1) if m else '') + '    '
+    value_col = None
+    for i in range(t_end - 1, t_start, -1):
+        col = _detect_value_column(lines[i])
+        if col:
+            value_col = col
+            break
+
+    insert_idx = t_end
+    if value is None:
+        # 빈 블록 추가
+        new_lines = [
+            f"{base_indent}{key}",
+            base_indent + "{",
+            base_indent + "}",
+        ]
+        for off, line in enumerate(new_lines):
+            lines.insert(insert_idx + off, line)
+    else:
+        # 키-값 추가
+        val_str = str(value).strip()
+        new_line = _build_key_value_line(base_indent, key, val_str, value_col)
+        lines.insert(insert_idx, new_line)
+
+    return '\n'.join(lines) + '\n'
+
+
+def insert_value(
+        content: str,
+        parent_block: str,
+        target_block: str,
+        key: str,
+        value: Any | None = None,
+        before: str | None = None,
+        after: str | None = None,
+) -> str:
+    """특정 키 위/아래에 삽입 (before/after 지정)"""
+    assert not (before and after)
+    content = content.expandtabs(4)
+    lines = content.split('\n')
+
+    if parent_block.isdigit():
+        p_start, p_end = _find_number_parent(lines, parent_block)
+    else:
+        p_start, p_end = _find_block_range_brace(lines, parent_block)
+    if p_start is None:
+        return content
+
+    t_start, t_end = _find_named_block_in_range(lines, p_start, p_end, target_block)
+    if t_start is None:
+        return content
+
+    m = re.match(r'^(\s*)', lines[t_start])
+    base_indent = (m.group(1) if m else '') + '    '
+
+    anchor_idx = None
+    anchor_name = before or after
+    if anchor_name:
+        for i in range(t_start + 1, t_end):
+            if re.match(rf'^\s*{re.escape(anchor_name)}\b', lines[i].strip()):
+                anchor_idx = i
+                break
+
+    if anchor_idx is None:
+        return add_value(content, parent_block, target_block, key, value)
+
+    value_col = _detect_value_column(lines[anchor_idx])
+    insert_idx = anchor_idx if before else anchor_idx + 1
+
+    if value is None:
+        new_lines = [
+            f"{base_indent}{key}",
+            base_indent + "{",
+            base_indent + "}",
+        ]
+        for off, line in enumerate(new_lines):
+            lines.insert(insert_idx + off, line)
+    else:
+        val_str = str(value).strip()
+        new_line = _build_key_value_line(base_indent, key, val_str, value_col)
+        lines.insert(insert_idx, new_line)
+
+    return '\n'.join(lines) + '\n'
+
+
+# ============================================================================
+# 3. 특수 형식 처리 함수들
+# ============================================================================
+
+def change_value_tuple(
+        content: str,
+        parent_block: str,
+        key: str,
+        values: List[str],
+) -> str:
+    """regions ( fluid (fluid); ... ); 튜플 형식 변경"""
+    content = content.expandtabs(4)
+    lines = content.split('\n')
+
+    r_start, r_end = _find_block_range_brace(lines, parent_block)
+    if r_start is None:
+        return content
+
+    key_idx = None
+    for i in range(r_start + 1, r_end):
+        if re.match(rf'^\s*{re.escape(key)}\b', lines[i]):
+            key_idx = i
+            break
+
+    if key_idx is None:
+        return add_value_tuple(content, parent_block, key, values)
+
+    base_indent = re.match(r'^(\s*)', lines[key_idx]).group(1) if key_idx < len(lines) else ''
+    value_col = _detect_value_column(lines[key_idx])
+
+    inside = " ".join(str(v) for v in values)
+    value_str = f"({inside})"
+    new_line = _build_key_value_line(base_indent, key, value_str, value_col)
+    lines[key_idx] = new_line
+    return '\n'.join(lines) + '\n'
+
+
+def add_value_tuple(
+        content: str,
+        parent_block: str,
+        key: str,
+        values: List[str],
+) -> str:
+    """regions 튜플 형식에 새 키 추가"""
+    content = content.expandtabs(4)
+    lines = content.split('\n')
+
+    r_start, r_end = _find_block_range_brace(lines, parent_block)
+    if r_start is None:
+        return content
+
+    base_indent = re.match(r'^(\s*)', lines[r_start]).group(1) + '    ' if r_start is not None else '    '
+    value_col = None
+    for i in range(r_end - 1, r_start, -1):
+        col = _detect_value_column(lines[i])
+        if col:
+            value_col = col
+            break
+
+    inside = " ".join(str(v) for v in values)
+    value_str = f"({inside})"
+    new_line = _build_key_value_line(base_indent, key, value_str, value_col)
+    lines.insert(r_end, new_line)
+    return '\n'.join(lines) + '\n'
+
+
+def change_libs_list(
+    content: str,
+    parent_block: str,
+    new_libs: List[str],
+) -> str:
+    """
+    libs ( "lib1.so" ... ); 내부 리스트 완전 교체
+    """
+    content = content.expandtabs(4)
+    lines = content.split('\n')
+
+    # 1. libs 줄 찾기
+    libs_idx = None
+    for i, line in enumerate(lines):
+        if re.match(rf'^\s*{re.escape(parent_block)}\b', line.strip()):
+            libs_idx = i
+            break
+    if libs_idx is None:
+        return content
+
+    # 2. libs 줄의 들여쓰기 가져오기
+    m = re.match(r'^(\s*)', lines[libs_idx])
+    libs_indent = m.group(1) if m else ''
+
+    # 3. libs 다음 ( 줄 찾기
+    open_paren_idx = libs_idx + 1
+    if open_paren_idx >= len(lines) or not lines[open_paren_idx].strip().startswith('('):
+        return content
+
+    # 4. 기존 lib 줄들에서 들여쓰기 가져오기
+    content_indent = "    "  # 기본값
+    for i in range(open_paren_idx + 1, len(lines)):
+        line_stripped = lines[i].strip()
+        if line_stripped.startswith('"') and line_stripped.endswith('"'):
+            content_indent = lines[i][:len(lines[i]) - len(line_stripped)]
+            break
+
+    # 5. ); 줄 찾기
+    content_end = None
+    for i in range(open_paren_idx + 1, len(lines)):
+        if lines[i].strip().endswith(');'):
+            content_end = i
+            break
+
+    if content_end is None:
+        return content
+
+    # 6. libs ( 다음부터 ); 줄 포함해서 전체 삭제
+    del lines[open_paren_idx + 1:content_end + 1]
+
+    # 7. 새 내용 생성
+    new_lines = [f'{content_indent}"{lib}"' for lib in new_libs]
+    close_line = f'{libs_indent});'  # ); 는 libs와 같은 들여쓰기!
+
+    # 8. 삽입
+    lines[open_paren_idx + 1:open_paren_idx + 1] = new_lines
+    lines[open_paren_idx + 1 + len(new_lines):open_paren_idx + 1 + len(new_lines)] = [close_line]
+
+    return '\n'.join(lines) + '\n'
+
+# ============================================================================
+# 내부 헬퍼 함수들
+# ============================================================================
+
+def _find_number_parent(lines: list[str], number: str) -> Tuple[Optional[int], Optional[int]]:
+    """숫자 boundary 형식: 2 ( ... )"""
+    n = len(lines)
+    num_line = None
+    for i, line in enumerate(lines):
+        if line.strip() == number:
+            num_line = i
+            break
+    if num_line is None:
+        return (None, None)
+
+    start = None
+    for j in range(num_line + 1, n):
+        if lines[j].strip().startswith('('):
+            start = j
+            break
+    if start is None:
+        return (None, None)
+
+    brace_level = 0
+    for k in range(start, n):
+        brace_level += lines[k].count('(')
+        brace_level -= lines[k].count(')')
+        if brace_level == 0:
+            return (start, k)
+    return (None, None)
+
+
+def _find_named_block_in_range(lines: list[str], start: int, end: int, name: str) -> Tuple[
+    Optional[int], Optional[int]]:
+    """범위 내 named { ... } 블록 찾기"""
+    n = len(lines)
+    block_start = None
+    for i in range(start, end + 1):
+        if lines[i].strip() == name:
+            block_start = i
+            break
+    if block_start is None:
+        return (None, None)
+
+    i = block_start + 1
+    if i > end or not lines[i].strip().startswith('{'):
+        return (None, None)
+
+    brace_level = 0
+    for j in range(i, end + 1):
+        brace_level += lines[j].count('{')
+        brace_level -= lines[j].count('}')
+        if brace_level == 0:
+            return (block_start, j)
+    return (None, None)
+
+
+# ============================================================================
+# 사용 예제
+# ============================================================================
+
+if __name__ == "__main__":
+    print("=== OpenFOAM Dictionary 편집 모듈 테스트 ===")
+
+    boundary_example = """2
+(
+    outlet
+    {
+        type patch;
+    }
+    fluid_to_header
+    {
+        type mappedWall;
+        inGroups 1 ( wall );
+    }
+)
+"""
+
+    control_example = """functions
+{
+    probes1
+    {
+        type probes;
+    }
+}
+"""
+
+    regions_example = """regions
+(
+    fluid (fluid)
+    solid (header thruster)
+);
+"""
+
+    libs_example = """libs
+(
+    "libmyLiquids8.so"
+);
+"""
+    # 원본 출력
+    print(boundary_example)
+    print(control_example)
+    print(regions_example)
+    print(libs_example)
+
+    # 테스트들...
+    print("\n1. boundary inGroups 변경")
+    result1 = change_key_value(boundary_example, "2", "fluid_to_header", "inGroups", ["wall", "outlet"])
+    print(result1)
+
+    print("\n2. controlDict에 키 추가")
+    result2 = add_value(control_example, "functions", "probes1", "field", "p")
+    print(result2)
+
+    print("\n3. regions 튜플 변경")
+    result3 = change_value_tuple(regions_example, "regions", "fluid", ["fluid", "wall"])
+    print(result3)
+
+    print("\n4. libs 리스트 변경")
+    result4 = change_libs_list(libs_example, "libs", ["libCustom.so", "libUtility.so"])
+    print(result4)

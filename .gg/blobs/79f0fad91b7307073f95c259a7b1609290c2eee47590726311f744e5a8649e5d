@@ -1,0 +1,162 @@
+import re
+from typing import List, Optional, Tuple
+
+def _find_block_range_brace_parent(lines: list[str], name: str) -> Tuple[Optional[int], Optional[int]]:
+    n = len(lines)
+    start = None
+    for i, line in enumerate(lines):
+        if re.match(rf'^\s*{re.escape(name)}\b', line.strip()):
+            start = i
+            break
+    if start is None:
+        return (None, None)
+
+    i = start + 1
+    if i >= n:
+        return (None, None)
+
+    brace_level = 0
+    for j in range(i, n):
+        brace_level += lines[j].count('(')
+        brace_level -= lines[j].count(')')
+        if brace_level == 0:
+            return (start, j)
+    return (None, None)
+
+def _detect_value_column(line: str) -> Optional[int]:
+    if not line.strip():
+        return None
+    if line.strip().startswith('//'):
+        return None
+
+    leading = len(line) - len(line.lstrip(' '))
+    tokens = line.strip().split()
+    if len(tokens) < 2:
+        return None
+
+    key_token = tokens[0]
+    key_index = line.find(key_token, leading)
+    if key_index == -1:
+        return None
+
+    i = key_index + len(key_token)
+    while i < len(line) and line[i] == ' ':
+        i += 1
+    if i >= len(line):
+        return None
+    return i
+
+def add_value_tuple(
+    content: str,
+    parent_block: str,
+    key: str,
+    values: List[str],
+) -> str:
+    """
+    regions 같은 튜플 블록에 새 key ( v1 v2 ... ) 한 줄 추가.
+
+    예)
+        add_value_tuple(content, "regions", "fluid", ["fluid"])
+        add_value_tuple(content, "regions", "gas", ["air"])
+    """
+    content = content.expandtabs(4)
+    lines = content.split('\n')
+
+    r_start, r_end = _find_block_range_brace_parent(lines, parent_block)
+    if r_start is None:
+        return content
+
+    m = re.match(r'^(\s*)', lines[r_start])
+    base_indent = (m.group(1) if m else '') + '    '
+
+    inside = " ".join(str(v) for v in values)
+    value_str = f"({inside})"
+
+    value_col = None
+    for i in range(r_end - 1, r_start, -1):
+        col = _detect_value_column(lines[i])
+        if col is not None:
+            value_col = col
+            break
+
+    key_part = base_indent + key
+    if value_col is None:
+        new_line = f"{key_part}    {value_str}"
+    else:
+        if len(key_part) >= value_col:
+            new_line = key_part + ' ' + value_str
+        else:
+            spaces = ' ' * (value_col - len(key_part))
+            new_line = key_part + spaces + value_str
+
+    insert_idx = r_end
+    lines.insert(insert_idx, new_line)
+    return '\n'.join(lines) + '\n'
+
+def change_value_tuple(
+    content: str,
+    parent_block: str,
+    key: str,
+    values: List[str],
+) -> str:
+    """
+    regions 같은 튜플 블록에서 기존 key의 ( ... ) 내용을 교체.
+
+    예)
+        change_value_tuple(content, "regions", "fluid", ["fluid", "wall"])
+    """
+    content = content.expandtabs(4)
+    lines = content.split('\n')
+
+    r_start, r_end = _find_block_range_brace_parent(lines, parent_block)
+    if r_start is None:
+        return content
+
+    key_idx = None
+    for i in range(r_start + 1, r_end):
+        if re.match(rf'^\s*{re.escape(key)}\b', lines[i]):
+            key_idx = i
+            break
+
+    if key_idx is None:
+        return add_value_tuple(content, parent_block, key, values)
+
+    m = re.match(r'^(\s*)', lines[key_idx])
+    base_indent = m.group(1) if m else ''
+    value_col = _detect_value_column(lines[key_idx])
+
+    inside = " ".join(str(v) for v in values)
+    value_str = f"({inside})"
+
+    key_part = base_indent + key
+    if value_col is None:
+        new_line = f"{key_part}    {value_str}"
+    else:
+        if len(key_part) >= value_col:
+            new_line = key_part + ' ' + value_str
+        else:
+            spaces = ' ' * (value_col - len(key_part))
+            new_line = key_part + spaces + value_str
+
+    lines[key_idx] = new_line
+    return '\n'.join(lines) + '\n'
+
+# ===== 예제 =====
+if __name__ == "__main__":
+    original = """regions
+(
+    fluid       (fluid)
+    solid       (header thruster)
+);
+"""
+
+    print("=== 원본 ===")
+    print(original)
+
+    print("=== change_value_tuple('regions','fluid',['fluid','wall']) ===")
+    t1 = change_value_tuple(original, "regions", "fluid", ["fluid", "wall"])
+    print(t1)
+
+    print("=== add_value_tuple('regions','gas',['air']) ===")
+    t2 = add_value_tuple(t1, "regions", "gas", ["air"])
+    print(t2)

@@ -1,0 +1,536 @@
+class ExtractUtil:
+    def __init__(self):
+        pass
+
+    def _to_number(self, s):
+        try:
+            if '.' in s or 'e' in s or 'E' in s:
+                return float(s)
+            return int(s)
+        except ValueError:
+            return None
+
+    def extract(self, token_data, index=0):
+        result = {}
+        n = len(token_data)
+        is_root = (index == 0)
+
+        while index < n:
+            tok = token_data[index]
+
+            if tok == '\n' or tok.isspace() or tok.startswith('//') or tok.startswith('/*'):
+                index += 1
+                continue
+
+            if tok in ('}', ')'):
+                return result, index + 1
+
+            if tok[0].isalnum() or tok[0] in ['"', '#', '$']:
+                key = tok
+                index += 1
+
+                j = index
+                while j < n and (
+                        token_data[j] == '\n'
+                        or token_data[j].isspace()
+                        or token_data[j].startswith('//')
+                        or token_data[j].startswith('/*')
+                ):
+                    j += 1
+
+                if key == "blocks" and j < n and token_data[j] == "(":
+                    result[key], index = self._parse_blocks(token_data, j)
+                    continue
+
+                if key == "boundary" and j < n and token_data[j] == "{":
+                    result[key], index = self._parse_dict(token_data, j + 1)
+                    continue
+
+                if key == "regions" and j < n and token_data[j] == "(":
+                    result[key], index = self._parse_regions(token_data, j)
+                    continue
+
+                while index < n:
+                    tok = token_data[index]
+
+                    if tok == '\n' or tok.isspace() or tok.startswith('//') or tok.startswith('/*'):
+                        index += 1
+                        continue
+
+                    # dictionary
+                    if tok == '{':
+                        child, index = self.extract(token_data, index + 1)
+                        result[key] = child
+                        break
+
+                    # parentheses
+                    if tok == '(':
+                        # vector
+                        j = index + 1
+                        vec = []
+                        is_vector = True
+
+                        while j < n:
+                            t = token_data[j]
+                            if t == '\n':
+                                is_vector = False
+                                break
+                            if t == ')':
+                                break
+                            if t.isspace():
+                                j += 1
+                                continue
+                            num = self._to_number(t)
+                            if num is None:
+                                is_vector = False
+                                break
+                            vec.append(num)
+                            j += 1
+
+                        if is_vector and j < n and token_data[j] == ')' and len(vec) >= 2:
+                            result[key] = vec
+                            index = j + 1
+                            if not is_root:
+                                while index < n and token_data[index] != ';':
+                                    index += 1
+                                index += 1
+                            break
+
+                        # list of vector
+                        j = index + 1
+                        vectors = []
+                        is_vector_list = True
+
+                        while j < n:
+                            t = token_data[j]
+                            if t == '\n' or t.isspace() or t.startswith('//') or t.startswith('/*'):
+                                j += 1
+                                continue
+                            if t == ')':
+                                break
+                            if t != '(':
+                                is_vector_list = False
+                                break
+                            j += 1
+                            v = []
+
+                            while j < n:
+                                t = token_data[j]
+                                if t == ')':
+                                    j += 1
+                                    break
+                                if t == '\n' or t.isspace():
+                                    j += 1
+                                    continue
+                                num = self._to_number(t)
+                                if num is None:
+                                    is_vector_list = False
+                                    break
+                                v.append(num)
+                                j += 1
+
+                            if not is_vector_list or len(v) < 2:
+                                is_vector_list = False
+                                break
+                            vectors.append(v)
+
+                        if is_vector_list and j < n and token_data[j] == ')':
+                            result[key] = vectors
+                            index = j + 1
+                            if not is_root:
+                                while index < n and token_data[index] != ';':
+                                    index += 1
+                                index += 1
+                            break
+
+                        # general list (string / dict / inline-key-list)
+                        values = []
+                        current = []
+                        index += 1
+
+                        while index < n:
+                            tok = token_data[index]
+
+                            if tok.startswith('//') or tok.startswith('/*'):
+                                index += 1
+                                continue
+
+                            # list item: dict
+                            if tok == '{':
+                                child, index = self.extract(token_data, index + 1)
+                                values.append(child)
+                                continue
+
+                            # list entry: key + { dict }
+                            if tok[0].isalnum() or tok in ['"', '#', '$']:
+                                item_key = tok
+                                j = index + 1
+
+                                # skip whitespace / newline
+                                while j < n and (token_data[j] == '\n' or token_data[j].isspace()):
+                                    j += 1
+
+                                if j < n and token_data[j] == '{':
+                                    child, j2 = self.extract(token_data, j + 1)
+                                    values.append({item_key: child})
+                                    index = j2
+                                    continue
+
+                            # generic inline with optional count: <name> [count] ( ... )
+                            if tok[0].isalnum() or tok[0] in ['"', '#', '$']:
+                                name = tok
+                                j = index + 1
+
+                                while j < n and (token_data[j] == '\n' or token_data[j].isspace()):
+                                    j += 1
+
+                                # optional count
+                                if j < n and self._to_number(token_data[j]) is not None:
+                                    j += 1
+                                    while j < n and (token_data[j] == '\n' or token_data[j].isspace()):
+                                        j += 1
+
+                                if j < n and token_data[j] == '(':
+                                    j += 1
+                                    items = []
+
+                                    while j < n:
+                                        t = token_data[j]
+                                        if t == ')':
+                                            j += 1
+                                            break
+                                        if t == '\n' or t.isspace():
+                                            j += 1
+                                            continue
+                                        items.append(t)
+                                        j += 1
+
+                                    values.append([name, items])
+                                    index = j
+                                    continue
+
+                            # inline key + ( ... )
+                            if (tok[0].isalnum() or tok[0] in ['"', '#', '$']):
+                                item_key = tok
+                                j = index + 1
+
+                                while j < n and (token_data[j] == '\n' or token_data[j].isspace()):
+                                    j += 1
+
+                                if j < n and token_data[j] == '(':
+                                    j += 1
+                                    item_values = []
+                                    is_inline = True
+
+                                    while j < n:
+                                        t = token_data[j]
+
+                                        if t == ')':
+                                            j += 1
+                                            break
+
+                                        if t == '\n':
+                                            is_inline = False
+                                            break
+
+                                        if t.isspace():
+                                            j += 1
+                                            continue
+
+                                        if self._to_number(t) is not None:
+                                            is_inline = False
+                                            break
+
+                                        item_values.append(t)
+                                        j += 1
+
+                                    if is_inline:
+                                        if key == "inGroups":
+                                            values.append(item_key)
+                                            values.append(item_values)
+                                        elif key == "regions":
+                                            values.append([item_key, item_values])
+                                        else:
+                                            values.append({item_key: item_values})
+                                        index = j
+                                        continue
+
+                            # mixed inline sequence (hex (..) (..) word (..))
+                            if tok[0].isalnum() or tok in ['"', '#', '$']:
+                                seq = []
+                                j = index
+
+                                while j < n:
+                                    t = token_data[j]
+
+                                    if t == '\n':
+                                        break
+
+                                    if t.isspace():
+                                        j += 1
+                                        continue
+
+                                    # vector
+                                    if t == '(':
+                                        k = j + 1
+                                        vec = []
+                                        is_vec = True
+
+                                        while k < n:
+                                            tt = token_data[k]
+
+                                            if tt == ')':
+                                                k += 1
+                                                break
+
+                                            if tt.isspace():
+                                                k += 1
+                                                continue
+
+                                            num = self._to_number(tt)
+                                            if num is None:
+                                                is_vec = False
+                                                break
+
+                                            vec.append(num)
+                                            k += 1
+
+                                        if is_vec:
+                                            seq.append(vec)
+                                            j = k
+                                            continue
+
+                                        break
+
+                                    # plain word
+                                    if t[0].isalnum() or t in ['"', '#', '$']:
+                                        seq.append(t)
+                                        j += 1
+                                        continue
+
+                                    break
+
+                                if len(seq) >= 2:
+                                    values.append(seq)
+                                    index = j
+                                    continue
+
+                            # newline split
+                            if tok == '\n':
+                                if current:
+                                    values.append(' '.join(current))
+                                    current = []
+                                index += 1
+                                continue
+
+                            if tok == ')':
+                                if current:
+                                    values.append(' '.join(current))
+                                index += 1
+                                break
+
+                            if not tok.isspace():
+                                current.append(tok)
+
+                            index += 1
+
+                        result[key] = values
+                        if not is_root:
+                            while index < n and token_data[index] != ';':
+                                index += 1
+                            index += 1
+                        break
+
+                    # leaf
+                    value_tokens = []
+                    while index < n:
+                        tok = token_data[index]
+
+                        if tok == '\n' or tok.isspace() or tok.startswith('//') or tok.startswith('/*'):
+                            index += 1
+                            continue
+
+                        if tok == ';':
+                            index += 1
+                            break
+
+                        value_tokens.append(tok)
+                        index += 1
+
+                    result[key] = ' '.join(value_tokens)
+                    break
+
+                continue
+
+            index += 1
+
+        return result, index
+
+    def _parse_blocks(self, tokens, index):
+        blocks = []
+        cur = []
+        depth = 0
+        index += 1  # skip '(' after blocks
+        n = len(tokens)
+
+        while index < n:
+            tok = tokens[index]
+
+            if tok == '\n' or tok.isspace() or tok.startswith('//') or tok.startswith('/*'):
+                index += 1
+                continue
+
+            if tok == '(':
+                depth += 1
+                cur.append(tok)
+                index += 1
+                continue
+
+            if tok == ')':
+                if depth == 0:
+                    if cur:
+                        blocks.append(self._normalize_block(cur))
+                    return blocks, index + 1
+
+                depth -= 1
+                cur.append(tok)
+                index += 1
+                continue
+
+            # 새로운 block 시작: hex
+            if tok == 'hex' and cur and depth == 0:
+                blocks.append(self._normalize_block(cur))
+                cur = []
+
+            cur.append(tok)
+            index += 1
+
+        return blocks, index
+
+    def _normalize_block(self, tokens):
+        out = []
+        i = 0
+        n = len(tokens)
+
+        while i < n:
+            t = tokens[i]
+
+            if t == '\n' or (isinstance(t, str) and t.isspace()):
+                i += 1
+                continue
+
+            if t == "(":
+                vec = []
+                i += 1
+                while i < n and tokens[i] != ")":
+                    tt = tokens[i]
+                    if tt == '\n' or (isinstance(tt, str) and tt.isspace()):
+                        i += 1
+                        continue
+                    num = self._to_number(tt)
+                    if num is not None:
+                        vec.append(num)
+                    i += 1
+                out.append(vec)
+                i += 1
+                continue
+
+            out.append(t)
+            i += 1
+
+        return out
+
+    def _parse_regions(self, tokens, index):
+        regions = []
+        n = len(tokens)
+
+        def skip(i):
+            while i < n:
+                t = tokens[i]
+                if t == '\n' or t.isspace() or t.startswith('//') or t.startswith('/*'):
+                    i += 1
+                    continue
+                return i
+            return i
+
+        index += 1  # skip '(' after regions
+
+        while index < n:
+            index = skip(index)
+            if index >= n:
+                break
+
+            tok = tokens[index]
+
+            if tok == ')':
+                return regions, index + 1
+
+            rtype = tok
+            index += 1
+
+            index = skip(index)
+            if index >= n:
+                return regions, index
+
+            count = None
+            if self._to_number(tokens[index]) is not None:
+                count = int(self._to_number(tokens[index]))
+                index += 1
+                index = skip(index)
+
+            if index >= n or tokens[index] != '(':
+                return regions, index
+
+            index += 1  # skip '('
+            names = []
+
+            while index < n:
+                t = tokens[index]
+                if t == ')':
+                    index += 1
+                    break
+                if t == '\n' or t.isspace() or t.startswith('//') or t.startswith('/*'):
+                    index += 1
+                    continue
+                names.append(t)
+                index += 1
+
+            regions.append([rtype, names] if count is None else [rtype, count, names])
+
+        return regions, index
+
+    def _parse_dict(self, tokens, index):
+        result = {}
+
+        while index < len(tokens):
+            tok = tokens[index]
+
+            if tok == "}":
+                return result, index + 1
+
+            if self._skip(tok):
+                index += 1
+                continue
+
+            key = tok
+            index += 1
+            index = self._skip_space(tokens, index)
+
+            if tokens[index] == "{":
+                result[key], index = self._parse_dict(tokens, index + 1)
+            else:
+                result[key], index = self._parse_leaf(tokens, index)
+
+        return result, index
+
+    def _parse_leaf(self, tokens, index):
+        values = []
+        while index < len(tokens):
+            tok = tokens[index]
+            if tok == ";":
+                return " ".join(values), index + 1
+            if not tok.isspace():
+                values.append(tok)
+            index += 1
+        return " ".join(values), index
+

@@ -1,0 +1,52 @@
+# builder.py
+from .ast_nodes import ASTDict, ASTEntry, ASTList, ASTCompound, ASTValue
+from .cst import CSTToken, CSTDict
+
+def build_ast(cst_node):
+    # Root wrapper
+    if hasattr(cst_node, "node"):
+        return build_ast(cst_node.node)
+
+    # Dict
+    if hasattr(cst_node, "entries"):
+        ast = ASTDict()
+        for entry in cst_node.entries:
+            ast.entries[entry.key_token.text] = ASTEntry(
+                key=entry.key_token.text,
+                value_node=build_ast(entry.value_node),
+                cst_entry=entry
+            )
+        return ast
+
+    # List (🔥 핵심 수정)
+    if hasattr(cst_node, "items"):
+        ast = ASTList()
+        items = cst_node.items
+        i = 0
+        n = len(items)
+
+        while i < n - 1:
+            head = items[i]
+            body = items[i + 1]
+
+            # WORD + { ... }  → compound
+            if isinstance(head, CSTToken) and isinstance(body, CSTDict):
+                ast.items.append(
+                    ASTCompound(
+                        head=head.text,
+                        body=build_ast(body),
+                        cst_node=body
+                    )
+                )
+                i += 2
+                continue
+
+            i += 1
+
+        return ast
+
+    # Primitive
+    return ASTValue(
+        value=getattr(cst_node, "text", None),
+        cst_node=cst_node
+    )

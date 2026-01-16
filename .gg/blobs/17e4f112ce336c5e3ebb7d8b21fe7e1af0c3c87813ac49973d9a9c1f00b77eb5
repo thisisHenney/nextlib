@@ -1,0 +1,280 @@
+import re
+from typing import Tuple, Optional
+from typing import Any
+
+
+def change_key_value(
+    content: str,
+    parent_block: str,
+    target_block: str,
+    key: str,
+    value: Any,
+) -> str:
+    """
+      parent_block > target_block 블록 내부의 key 값을 변경.
+      - 숫자 boundary 형식: 2 ( ... patches ... )
+      - 일반 dictionary 형식: boundary { ... }
+
+      inGroups + list → inGroups N ( a b c ); 특수 처리.
+      """
+    content = content.expandtabs(4)
+    lines = content.split('\n')
+
+    # 1) parent_block 범위 찾기
+    if parent_block.isdigit():
+        # 숫자 boundary 형식 예: 2 ( ... )
+        p_start, p_end = _find_block_range_number_parent(lines, parent_block)
+    else:
+        # 일반 dictionary 형식 예: boundary { ... }
+        p_start, p_end = _find_block_range_brace_parent(lines, parent_block)
+
+    if p_start is None:
+        return content
+
+    # 2) parent_block 내부에서 target_block 범위 찾기
+    t_start, t_end = _find_named_block_in_range(lines, p_start, p_end, target_block)
+    if t_start is None:
+        return content
+
+    # 3) target_block 내부에서 key 줄 찾기
+    key_idx = None
+    for i in range(t_start + 1, t_end):
+        if re.match(rf'^\s*{re.escape(key)}\b', lines[i]):
+            key_idx = i
+            break
+
+    # 4) 없으면 새로 추가 (닫는 } 바로 위에)
+    if key_idx is None:
+        key_idx = t_end  # 닫는 } 바로 위
+        # 기준 들여쓰기: 같은 블록 안의 다른 키 라인 참조
+        base_indent = "        "
+        for i in range(t_start + 1, t_end):
+            m = re.match(r'^(\s*)\w+\b', lines[i])
+            if m:
+                base_indent = m.group(1)
+                break
+        lines.insert(key_idx, base_indent + key)  # 일단 키만 넣어 두고 아래서 전체 라인 재구성
+    else:
+        m = re.match(r'^(\s*)', lines[key_idx])
+        base_indent = m.group(1) if m else ""
+
+    # 5) 일반 키 vs inGroups(리스트) 분기
+    if key == "inGroups" and isinstance(value, (list, tuple)):
+        # 특수 처리: inGroups N ( a b c );
+        n = len(value)
+        group_str = " ".join(str(v) for v in value)
+        # 값 컬럼 맞추기 위해 기존 라인(있다면)에서 value_col 추출 시도
+        value_col = _detect_value_column(lines[key_idx])
+        if value_col is None:
+            # 그냥 적당히 8칸 띄움
+            new_line = f"{base_indent}inGroups        {n} ( {group_str} );"
+        else:
+            # inGroups 키 부분 생성
+            key_part = base_indent + "inGroups"
+            val_str = f"{n} ( {group_str} );"
+            if len(key_part) >= value_col:
+                new_line = key_part + ' ' + val_str
+            else:
+                spaces = ' ' * (value_col - len(key_part))
+                new_line = key_part + spaces + val_str
+        lines[key_idx] = new_line
+    else:
+        # 일반 처리: key value; (값 컬럼은 윗줄 값 컬럼 기준)
+        val_str = str(value).strip()
+        if not val_str.endswith(';'):
+            val_str += ';'
+
+        # 윗줄에서 값 컬럼 찾기
+        value_col = None
+        for i in range(key_idx - 1, t_start, -1):
+            col = _detect_value_column(lines[i])
+            if col is not None:
+                value_col = col
+                break
+
+        if value_col is None:
+            # 기준 줄 없으면 기본 4칸
+            new_line = f"{base_indent}{key}    {val_str}"
+        else:
+            key_part = base_indent + key
+            if len(key_part) >= value_col:
+                new_line = key_part + ' ' + val_str
+            else:
+                spaces = ' ' * (value_col - len(key_part))
+                new_line = key_part + spaces + val_str
+
+        lines[key_idx] = new_line
+
+    return "\n".join(lines) + "\n"
+
+def _find_block_range(lines, block_name):
+    """lines(list[str])에서 block_name { ... } 범위 (start, end) 반환."""
+    n = len(lines)
+    start = None
+    for i, line in enumerate(lines):
+        if re.match(rf'^\s*{re.escape(block_name)}\b', line.strip()):
+            start = i
+            break
+    if start is None:
+        return (None, None)
+
+    i = start + 1
+    if i >= n or not lines[i].strip().startswith('{'):
+        return (None, None)
+
+    brace_level = 0
+    for j in range(i, n):
+        brace_level += lines[j].count('{')
+        brace_level -= lines[j].count('}')
+        if brace_level == 0:
+            return (start, j)
+    return (None, None)
+
+def _find_block_range_brace_parent(lines: list[str], name: str) -> Tuple[Optional[int], Optional[int]]:
+    """
+    name
+    {
+        ...
+    }
+    형식의 블록을 찾아 (start, end) 반환.
+    예: boundary { ... }, functions { ... }
+    """
+    n = len(lines)
+    start = None
+    for i, line in enumerate(lines):
+        if re.match(rf'^\s*{re.escape(name)}\b', line.strip()):
+            start = i
+            break
+    if start is None:
+        return (None, None)
+
+    i = start + 1
+    if i >= n or not lines[i].strip().startswith('{'):
+        return (None, None)
+
+    brace_level = 0
+    for j in range(i, n):
+        brace_level += lines[j].count('{')
+        brace_level -= lines[j].count('}')
+        if brace_level == 0:
+            return (start, j)
+    return (None, None)
+
+def _find_block_range_number_parent(lines: list[str], parent: str) -> Tuple[Optional[int], Optional[int]]:
+    """
+    boundary 형식의 상위 숫자 블록 (예: '2' + '(' ... ')' ) 범위를 찾음.
+    parent 가 '2' 라면, '2' 줄 이후 첫 '(' 에서 시작해, 대응되는 ')'까지 반환.
+    """
+    n = len(lines)
+    num_line = None
+    for i, line in enumerate(lines):
+        if line.strip() == parent:
+            num_line = i
+            break
+    if num_line is None:
+        return (None, None)
+
+    # 숫자 줄 이후 첫 '(' 찾기
+    start = None
+    for j in range(num_line + 1, n):
+        if lines[j].strip().startswith('('):
+            start = j
+            break
+    if start is None:
+        return (None, None)
+
+    # 괄호 카운트로 끝 ')' 찾기
+    brace_level = 0
+    for k in range(start, n):
+        brace_level += lines[k].count('(')
+        brace_level -= lines[k].count(')')
+        if brace_level == 0:
+            end = k
+            return (start, end)
+    return (None, None)
+
+def _find_named_block_in_range(lines: list[str], start: int, end: int, name: str) -> Tuple[Optional[int], Optional[int]]:
+    """
+    lines[start:end] 범위 안에서
+    name
+    {
+        ...
+    }
+    형태의 블록을 찾는다.
+    """
+    n = len(lines)
+    block_start = None
+    for i in range(start, end + 1):
+        if lines[i].strip() == name:
+            block_start = i
+            break
+    if block_start is None:
+        return (None, None)
+
+    # 다음 줄이 '{'인지 확인
+    i = block_start + 1
+    if i > end or not lines[i].strip().startswith('{'):
+        return (None, None)
+
+    brace_level = 0
+    for j in range(i, end + 1):
+        brace_level += lines[j].count('{')
+        brace_level -= lines[j].count('}')
+        if brace_level == 0:
+            return (block_start, j)
+    return (None, None)
+
+def _detect_value_column(line: str) -> Optional[int]:
+    """'type            mappedWall;' 에서 'mappedWall' 시작 컬럼(0-based) 반환."""
+    if not line.strip():
+        return None
+    if line.strip().startswith('//'):
+        return None
+    if line.strip() == '}':
+        return None
+
+    leading = len(line) - len(line.lstrip(' '))
+    tokens = line.strip().split()
+    if len(tokens) < 2:
+        return None
+
+    key_token = tokens[0]
+    key_index = line.find(key_token, leading)
+    if key_index == -1:
+        return None
+
+    i = key_index + len(key_token)
+    while i < len(line) and line[i] == ' ':
+        i += 1
+    if i >= len(line):
+        return None
+    return i
+
+
+if __name__ == "__main__":
+    original = """2
+(
+    outlet
+    {
+        type            patch;
+    }
+
+    fluid_to_header
+    {
+        type            mappedWall;
+        inGroups        1 ( wall );
+    }
+)
+"""
+    print("=== 원본 ===")
+    print(original)
+
+    print("=== change_key_value: inGroups 리스트 변경 ===")
+    t = change_key_value(
+        original,
+        parent_block="2",
+        target_block="fluid_to_header",
+        key="inGroups",
+        value=["wall", "outlet"],
+    )
+    print(t)

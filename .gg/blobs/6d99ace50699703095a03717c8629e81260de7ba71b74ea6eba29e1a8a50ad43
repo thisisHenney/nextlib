@@ -1,0 +1,22 @@
+# foamdict/ast.py
+from dataclasses import dataclass, field
+from typing import Any, List, Dict
+
+@dataclass
+class Value:
+    pass
+
+@dataclass
+class Primitive(Value):
+    value: Any
+
+@dataclass
+class ListValue(Value):
+    items: List[Value]
+
+@dataclass
+class DictValue(Value):
+    entries: Dict[str, List[Value]] = field(default_factory=dict)
+
+    def first(self, key):
+        return self.entries[key][0]

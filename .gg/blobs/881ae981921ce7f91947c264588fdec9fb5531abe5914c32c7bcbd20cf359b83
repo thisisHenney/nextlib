@@ -1,0 +1,182 @@
+from pathlib import Path
+from nextlib.openfoam.PyFoamCase.foamfile import FoamFile
+
+#Home
+# path = rf"C:\Users\thisi\OneDrive\바탕 화면\TestCase\simplefoam"
+
+# Office
+path = rf"C:\Users\thisi\OneDrive\바탕 화면\NewCase"
+
+if __name__ == '__main__':
+    foam = FoamFile()
+    if not foam.load(Path(path) / "testdata"):
+        print('Cannot load data')
+    else:
+        # Get
+        # print(foam.has_key('startFrom'))
+        # print(foam.has_key('startFrom2'))
+        # print(foam.has_key("outlet.inGroups"))
+
+        # print(foam.get_key_list())
+        # print(foam.get_key_list('outlet'))
+        # print(foam.get_key_list('outlet.maxY'))
+        # print(foam.get_value('outlet.maxY.patch'))
+
+        # print(foam.get_value('blocks'))
+        # print(foam.get_value("blocks", map_key="cells"))
+        # print(foam.get_value('blocks[0]'))
+        # print(foam.get_value("blocks[0]", map_key="type"))
+        # print(foam.get_value("blocks[0]", map_key="vertices"))
+        # print(foam.get_value("blocks[0]", map_key="cells"))
+        # print(foam.get_value("blocks[0]", map_key="gradingType"))
+        # print(foam.get_value("blocks[0]", map_key="gradingValues"))
+        # print(foam.get_value("blocks[1]"))
+
+        # print(foam.get_value("regions"))
+        # print(foam.get_value("regions[1]", map_key="type"))
+        # print(foam.get_value("regions", map_key="names"))
+
+        # print(foam.get_value('actions[1].type'))
+        # print(foam.get_value('actions[1].faceSet'))
+
+        # Rename
+        # print(foam.get_key_name_list('outlet.maxY'))
+        # foam.rename('outlet.maxY.name', 'newName')
+        # print(foam.get_key_name_list('outlet.maxY'))
+
+        # print(foam.get_key_name_list('outlet'))
+        # foam.rename('outlet.name', 'name2')
+        # print(foam.get_key_name_list('outlet'))
+
+        # Set
+        # print(foam.get_value('startFrom'))
+        # foam.set_value('startFrom', 'startTime2')
+        # print(foam.get_value('startFrom'))
+
+        # print(foam.get_value('outlet.name'))
+        # foam.set_value('outlet.name', 'thrust22')
+        # print(foam.get_value('outlet.name'))
+
+        # print(foam.get_value('outlet.maxY.name'))
+        # foam.set_value('outlet.maxY.name', 'fluid22')
+        # print(foam.get_value('outlet.maxY.name'))
+
+        # print(foam.get_value('actions[1].type'))
+        # foam.set_value('actions[1].type', 'faceZoneSet2')
+        # print(foam.get_value('actions[1].type'))
+
+        # print(foam.get_value('regions[0]', map_key="type"))
+        # foam.set_value("regions[0]", "fluid2", map_key="type")
+        # print(foam.get_value('regions[0]', map_key="type"))
+        # print(foam.get_value('regions[0]', map_key="names"))
+        # foam.set_value("regions[0]", "fluid2222222", map_key="type")
+        foam.set_value("regions[0]", ["fluid2", "fluid3"], map_key="names")
+        # print(foam.get_value('regions[0]', map_key="names"))
+        # print(foam.get_value('regions[0]', map_key="type"))
+        foam.save()
+
+        # print(foam.get_value('blocks'))
+        # print(foam.get_value('blocks[0]'))
+        # print(foam.get_value('blocks[1]'))
+
+        # print(foam.get_value('blocks[0]', map_key="cells"))
+        # foam.set_value("blocks[0]", [20, 30, 40], map_key="cells")
+        # foam.set_value("blocks[0]", [11, 11, 11], map_key="grading")
+        # print(foam.get_value('blocks[0]'))
+        # print(foam.get_value('blocks[0]', map_key="cells"))
+        # foam.save()
+
+        # print(foam.get_value("outlet.inGroups"))
+        # foam.set_value("outlet.inGroups", ["wall", "patch"])
+        # print(foam.get_value("outlet.inGroups"))
+        # foam.save()
+
+        # print(foam.get_key_name_list(""))
+        # foam.insert_value("libs", ["x", "y"], show_type="multiline")
+        # foam.insert_value("sub1.vector", [1,2,3])
+        # print(foam.get_key_name_list(""))
+        # foam.save()
+
+        # print(foam.get_value("vertices"))
+        # foam.set_value("vertices",
+        #                [
+        #                    [0.0, 0.0, 0.0],
+        #                    [0.0, 0.0, 0.0],
+        #                    [0.0, 0.0, 0.0]] )
+        # print(foam.get_value("vertices"))
+
+        # print(foam.get_key_name_list("outlet.maxY"))
+        # foam.remove("outlet.maxY.name")
+        # print(foam.get_key_name_list("outlet.maxY"))
+        # foam.save()
+
+        # print(foam.get_key_name_list(""))
+        # foam.remove("libs")
+        # print(foam.get_key_name_list(""))
+
+        # Insert
+        # print(foam.get_key_name_list(""))
+        # foam.insert_value("boundaryField.sub1.sub3", "empty")
+        # print(foam.get_key_name_list(""))
+        # foam.save()
+
+        # print(foam.get_key_name_list(""))
+        # foam.insert_value("boundaryField", {"type": "wall"})
+        # foam.insert_value("sub3.aaa", "empty")
+        # print(foam.get_key_name_list(""))
+
+        # print(foam.get_key_name_list("outlet"))
+        # foam.set_value("outlet.aaa", 123)
+        # print(foam.get_key_name_list("outlet"))
+        # foam.save()
+
+        # print(foam.get_key_name_list(""))
+        # foam.remove("actions[0]")
+        # foam.remove("actions[1]")
+        # foam.insert_value(
+        #     "actions",
+        #     {
+        #         "name": "111",
+        #         "type": "222",
+        #         "action": "3333",
+        #         "source": "444",
+        #         "faceSet": "555",
+        #     }
+        # )
+        # foam.save()
+        # print(foam.get_key_name_list(""))
+
+        # print(foam.get_value('libs[1]'))
+        # foam.remove("libs[1]")
+        # foam.set_value("sub1.vector", [1,2,3])
+
+        # foam.remove("actions[0].type")
+        # foam.insert_value("actions[0].type", "1111")
+
+        # print(foam.get_value("2.upperWall.type"))
+        # print(foam.get_value("2[1].type"))
+        # print(foam.get_value("2.upperWall.type"))
+
+        # print(foam.get_value("2[0].inGroups"))
+        # foam.set_value("2[0].inGroups", ["empty1", "empty2"])
+        # # (지원못함) foam.set_value("2.upperWall.inGroups", ["empty1"])
+        # print(foam.get_value("2[0].inGroups"))
+
+        # print(foam.get_value("regions", map_key='type'))
+        # print(foam.get_value("regions[0]", map_key='type'))
+        # print(foam.get_value("regions[1]", map_key='type'))
+
+        # print(foam.get_value("regions", map_key='names'))
+        # print(foam.get_value("regions[0]", map_key='names'))
+        # print(foam.get_value("regions[1]", map_key='names'))
+
+        # print(foam.set_value("regions[0]", ["empty"], map_key='names'))
+        # print(foam.get_value("regions[0]"))
+        #
+        # print(foam.get_value("regions[0]"))
+        # print(foam.set_value("regions[0]", "fluid2", map_key='type'))
+        # print(foam.get_value("regions[0]"))
+
+        # foam.save()
+
+        print('OK')

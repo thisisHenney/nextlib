@@ -1,0 +1,138 @@
+# builder.py
+from .ast_nodes import ASTDict, ASTEntry, ASTList, ASTCompound, ASTValue
+from .cst import CSTToken, CSTDict, CSTList, CSTSeq
+
+
+def build_ast(cst_node):
+    # Root wrapper
+    if hasattr(cst_node, "node"):
+        return build_ast(cst_node.node)
+
+    # Dict
+    if hasattr(cst_node, "entries"):
+        # 🔥 루트 포함 모든 dict는 CSTDict와 연결
+        ast = ASTDict(cst_node=cst_node)
+
+        for entry in cst_node.entries:
+            ast.entries[entry.key_token.text] = ASTEntry(
+                key=entry.key_token.text,
+                value_node=build_ast(entry.value_node),
+                cst_entry=entry
+            )
+        return ast
+
+    # List (핵심)
+    if hasattr(cst_node, "items"):
+        items = cst_node.items
+        n = len(items)
+
+        # 1) WORD + { } 패턴이 전부면 → dict로 승격
+        is_named_dict = (
+                n % 2 == 0 and
+                all(
+                    isinstance(items[i], CSTToken) and
+                    isinstance(items[i + 1], CSTDict)
+                    for i in range(0, n, 2)
+                )
+        )
+
+        if is_named_dict:
+            ast = ASTDict(cst_node=cst_node)  # 상위 dict (예: "3")
+
+            for i in range(0, n, 2):
+                key_tok = items[i]
+                body = items[i + 1]  # CSTDict (inlet의 { ... })
+
+                child_ast = build_ast(body)
+
+                # 🔥 핵심: inlet 자체 dict가 자기 CSTDict를 가리키게 한다
+                if hasattr(child_ast, "entries"):
+                    child_ast.cst_node = body
+
+                ast.entries[key_tok.text] = ASTEntry(
+                    key=key_tok.text,
+                    value_node=child_ast,
+                    cst_entry=None
+                )
+
+            return ast
+
+        # 2) compound 패턴: ( WORD {..} ) 또는 ( WORD (.. ) ) 반복
+        compounds = []
+        i = 0
+        while i < n - 1:
+            head = items[i]
+            body = items[i + 1]
+            if isinstance(head, CSTToken) and isinstance(body, (CSTDict, CSTList)):
+                compounds.append((head, body))
+                i += 2
+                continue
+            break  # 중간에 패턴이 끊기면 compound list로 보지 않음
+
+        if compounds and i == n:
+            # 전체가 head+body 쌍으로만 구성된 경우 → compound list
+            ast = ASTList()
+            for head, body in compounds:
+                ast.items.append(
+                    ASTCompound(
+                        head=head.text,
+                        body=build_ast(body),
+                        cst_node=body  # body span을 보관(필요하면 head까지 확장 가능)
+                    )
+                )
+            return ast
+
+        # 3) 스칼라 리스트: ( token token token ... ) → python list로
+        scalar_values = []
+        for it in items:
+            if isinstance(it, CSTToken):
+                scalar_values.append(it.text)
+
+            elif isinstance(it, CSTSeq):
+                parts = it.parts
+                if (
+                        len(parts) == 2
+                        and isinstance(parts[0], CSTToken)
+                        and parts[0].text.isdigit()
+                        and isinstance(parts[1], CSTList)
+                ):
+                    scalar_values.append(build_ast(parts[1]).value)
+                else:
+                    scalar_values.append(" ".join(
+                        p.text for p in parts if isinstance(p, CSTToken)
+                    ))
+
+            else:
+                # dict / list 같은 경우만 AST로 유지
+                v = build_ast(it)
+                if isinstance(v, ASTValue):
+                    scalar_values.append(v.value)
+                else:
+                    scalar_values.append(v)
+
+        return ASTValue(value=scalar_values, cst_node=cst_node)
+
+    # Primitive / Seq
+    if isinstance(cst_node, CSTSeq):
+        parts = cst_node.parts
+
+        # 🔥 case 1: NUMBER + ( ... )  → list
+        if (
+                len(parts) == 2
+                and isinstance(parts[0], CSTToken)
+                and parts[0].text.isdigit()
+                and isinstance(parts[1], CSTList)
+        ):
+            # count는 버리고 list만 사용
+            return build_ast(parts[1])
+
+        # 🔥 case 2: 일반 token 시퀀스 → 문자열
+        text = " ".join(
+            p.text for p in parts if isinstance(p, CSTToken)
+        )
+        return ASTValue(value=text, cst_node=cst_node)
+
+    if hasattr(cst_node, "text"):
+        return ASTValue(value=cst_node.text, cst_node=cst_node)
+
+    return ASTValue(value=None, cst_node=cst_node)

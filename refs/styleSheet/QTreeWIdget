@@ -1,0 +1,53 @@
+# Custom Style (Blue)
+QTreeWidget{
+    show-decoration-selected: 1;
+}
+QTreeWidget::item{
+    height: 24px;
+    border-right: 1px dotted grey;
+}
+QTreeWidget::item:hover {
+    border: 1px solid #567dbc;
+    /* border-left-color: transparent; */
+    border-radius: 2px;
+    /* background-color: lightblue; */
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #e7effd, stop:1 #cbdaf1);
+    selection-color : black;
+    /* padding-left: 1px; 기본으로 1px이 적용되어 있으므로 따로 추가할 필요는 없음 */
+}
+QTreeWidget::item:selected:active{
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #6ea1f1, stop:1 #3d87bf);
+    border-radius: 2px;
+}
+QTreeWidget::item:selected:!active {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #6b9be8, stop:1 #577fbf);
+    border-radius: 2px;
+}
+
+
+# Dark mode
+QTreeWidget {
+    background-color: #2b2b2b;
+    color: #ddd;
+    alternate-background-color: #323232;
+    border: 1px solid #3c3c3c;
+    show-decoration-selected: 1;
+}
+QTreeWidget::item {
+    height: 24px;
+    border: none;
+}
+QTreeWidget::item:hover {
+    background-color: #404040;
+}
+QTreeWidget::item:selected {
+    background-color: #5578a1;
+    color: #fff;
+}
+QHeaderView::section {
+    background-color: #383838;
+    color: #bbb;
+    border: none;
+    padding: 4px;
+}
+

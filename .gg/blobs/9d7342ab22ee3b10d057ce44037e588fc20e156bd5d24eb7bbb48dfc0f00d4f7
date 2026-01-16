@@ -1,0 +1,39 @@
+# test.py
+from nextlib.openfoam.PyFoamDict5.api import FoamDict
+
+
+FOAM_TEXT = r"""
+3
+(
+    inlet
+    {
+        type patch;
+        value uniform 1;
+    }
+
+    outlet
+    {
+        type patch;
+    }
+
+    upperWall
+    {
+        type wall;
+    }
+)
+"""
+
+
+def main():
+    print("=== Original Text ===")
+    print(FOAM_TEXT)
+
+    fd = FoamDict(FOAM_TEXT)
+
+    print(fd.get(["3", "upperWall", "type"]))  # wall
+    print(fd.get(["3", "inlet", "type"]))  # patch
+    print(fd.get(["3", "2", "type"]))  # wall
+    print(fd.get(["3", "0", "type"]))  # patch
+
+if __name__ == "__main__":
+    main()

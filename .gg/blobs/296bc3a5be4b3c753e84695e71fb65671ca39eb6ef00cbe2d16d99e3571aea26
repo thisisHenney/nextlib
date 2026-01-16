@@ -1,0 +1,6 @@
+import vtk.test_run
+
+if __name__ == '__main__':
+    print('Start Test Function...')
+
+    test_run

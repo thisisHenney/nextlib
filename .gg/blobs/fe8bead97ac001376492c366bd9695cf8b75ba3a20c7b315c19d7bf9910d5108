@@ -1,0 +1,243 @@
+import sys
+import numpy as np
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QFileDialog, QCheckBox, QApplication
+)
+import pyqtgraph as pg
+
+
+# ============================================================
+# Plot Widget (성능 OK 버전 그대로)
+# ============================================================
+class TimeSeriesPlotWidget(pg.PlotWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.setBackground("w")
+        self.showGrid(x=True, y=True, alpha=0.4)
+
+        self.plotItem.setLabel("bottom", "Time (s)")
+        self.plotItem.setLabel("left", "Pressure Fluctuation (bar)")
+
+        # ★ 실시간 패닝 핵심
+        self.plotItem.setClipToView(True)
+        self.plotItem.setDownsampling(mode="peak")
+
+        self.legend = None
+
+    # ---------------------------
+    # Legend (안전 기능만)
+    # ---------------------------
+    def setup_legend(self):
+        if self.legend is not None:
+            return
+
+        self.legend = self.plotItem.addLegend(offset=(10, 10))
+        self.legend.setBrush(pg.mkBrush(255, 255, 255, 255))
+        self.legend.setPen(pg.mkPen(0, 0, 0, 180))
+        self.legend.setZValue(1000)
+
+        self.legend.layout.setColumnFixedWidth(0, 28)
+        self.legend.layout.setColumnFixedWidth(1, 160)
+        self.legend.layout.setContentsMargins(6, 6, 6, 6)
+        self.legend.layout.setSpacing(6)
+
+    def style_legend_text(self):
+        if self.legend is None:
+            return
+
+        for _, label in self.legend.items:
+            label.setText(label.text, color=(0, 0, 0))
+            font = label.item.font()
+            font.setBold(True)
+            label.item.setFont(font)
+
+    # ---------------------------
+    # Main plot function
+    # ---------------------------
+    def plot_all(
+        self,
+        show_raw=True,
+        show_filtered=True,
+        show_mean=True,
+        time_raw=None,
+        raw=None,
+        mean=None,
+        time_filt=None,
+        filtered=None,
+    ):
+        self.clear()
+        self.legend = None
+        self.setup_legend()
+
+        # Mean (앞)
+        if show_mean and time_raw is not None and mean is not None:
+            self.plot(
+                time_raw,
+                mean,
+                pen=pg.mkPen((0, 0, 255), width=2),
+                name="Mean Data",
+            )
+
+        # Filtered (중간)
+        if show_filtered and time_filt is not None and filtered is not None:
+            curve = self.plot(
+                time_filt,
+                filtered,
+                pen=pg.mkPen((0, 200, 0), width=1),
+                name="Filtered Data (10~10kHz)",
+            )
+            curve.setDownsampling(auto=True)
+
+        # Raw (뒤)
+        if show_raw and time_raw is not None and raw is not None:
+            self.plot(
+                time_raw,
+                raw,
+                pen=pg.mkPen((255, 0, 0), width=1),
+                name="Raw Data",
+            )
+
+        self.enableAutoRange()
+        self.style_legend_text()
+
+
+# ============================================================
+# ★ 최종 Widget (MainWindow 아님)
+# ============================================================
+class TimeSignalViewerWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.time_raw = self.raw = self.mean = None
+        self.time_filt = self.filtered = None
+
+        # ---------------------------
+        # Layout
+        # ---------------------------
+        layout = QVBoxLayout(self)
+
+        self.plot = TimeSeriesPlotWidget(self)
+        layout.addWidget(self.plot)
+
+        # ---------------------------
+        # Controls
+        # ---------------------------
+        ctrl = QHBoxLayout()
+
+        self.chk_legend = QCheckBox("Legend")
+        self.chk_legend.setChecked(True)
+        self.chk_legend.stateChanged.connect(self.update_legend)
+        ctrl.addWidget(self.chk_legend)
+
+        self.chk_raw = QCheckBox("Raw")
+        self.chk_raw.setChecked(True)
+        self.chk_raw.stateChanged.connect(self.update_plot)
+        ctrl.addWidget(self.chk_raw)
+
+        self.chk_filt = QCheckBox("Filtered")
+        self.chk_filt.setChecked(True)
+        self.chk_filt.stateChanged.connect(self.update_plot)
+        ctrl.addWidget(self.chk_filt)
+
+        self.chk_mean = QCheckBox("Mean")
+        self.chk_mean.setChecked(True)
+        self.chk_mean.stateChanged.connect(self.update_plot)
+        ctrl.addWidget(self.chk_mean)
+
+        ctrl.addStretch()
+        layout.addLayout(ctrl)
+
+        # ---------------------------
+        # File buttons
+        # ---------------------------
+        btn = QHBoxLayout()
+
+        b1 = QPushButton("Load Raw Data")
+        b1.clicked.connect(self.load_raw)
+        btn.addWidget(b1)
+
+        b2 = QPushButton("Load Filtered Data")
+        b2.clicked.connect(self.load_filtered)
+        btn.addWidget(b2)
+
+        layout.addLayout(btn)
+
+    # ---------------------------
+    # Legend show / hide
+    # ---------------------------
+    def update_legend(self):
+        if self.plot.legend is None:
+            return
+        self.plot.legend.setVisible(self.chk_legend.isChecked())
+
+    # ---------------------------
+    # Downsample (OK 버전 그대로)
+    # ---------------------------
+    def downsample(self, x, y, max_points=8000):
+        if len(x) <= max_points:
+            return x, y
+        step = max(1, len(x) // max_points)
+        return x[::step], y[::step]
+
+    # ---------------------------
+    # Plot update
+    # ---------------------------
+    def update_plot(self):
+        self.plot.plot_all(
+            show_raw=self.chk_raw.isChecked(),
+            show_filtered=self.chk_filt.isChecked(),
+            show_mean=self.chk_mean.isChecked(),
+            time_raw=self.time_raw,
+            raw=self.raw,
+            mean=self.mean,
+            time_filt=self.time_filt,
+            filtered=self.filtered,
+        )
+        self.update_legend()
+
+    # ---------------------------
+    # File load
+    # ---------------------------
+    def load_raw(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Raw File", "", "Data Files (*.dat *.txt)"
+        )
+        if not path:
+            return
+
+        data = np.loadtxt(path)
+        self.time_raw = data[:, 0]
+        self.raw = data[:, 1]
+        self.mean = np.convolve(self.raw, np.ones(200) / 200, mode="same")
+
+        self.update_plot()
+
+    def load_filtered(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Filtered File", "", "Data Files (*.dat *.txt)"
+        )
+        if not path:
+            return
+
+        data = np.loadtxt(path)
+        self.time_filt = data[:, 0]
+        self.filtered = data[:, 1]
+
+        self.time_filt, self.filtered = self.downsample(
+            self.time_filt, self.filtered, max_points=8000
+        )
+
+        self.update_plot()
+
+
+# ============================================================
+# Test launcher (필요 없으면 삭제 가능)
+# ============================================================
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    w = TimeSignalViewerWidget()
+    w.resize(1200, 650)
+    w.show()
+    sys.exit(app.exec())

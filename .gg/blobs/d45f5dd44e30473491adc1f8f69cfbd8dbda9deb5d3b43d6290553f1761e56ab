@@ -1,0 +1,277 @@
+from __future__ import annotations
+
+from nextlib.openfoam.foamcase.internal.lexer import *
+from nextlib.openfoam.foamcase.internal.cst import *
+
+
+class ParseError(Exception):
+    pass
+
+
+class Parser:
+    def __init__(self, tokens: List[Token]):
+        self.tokens = tokens
+        self.i = 0
+
+    def cur(self) -> Token:
+        if self.i >= len(self.tokens):
+            return self.tokens[-1]
+        return self.tokens[self.i]
+
+    def eat(self, kind: str | None = None, text: str | None = None) -> Token:
+        t = self.cur()
+
+        if kind is not None and t.kind != kind:
+            raise ParseError(f"Expected {kind}, got {t.kind} at {t.start}")
+        if text is not None and getattr(t, "text", None) != text:
+            raise ParseError(f"Expected {text!r}, got {getattr(t, 'text', None)!r} at {t.start}")
+
+        if t.kind != "EOF":
+            self.i += 1
+        return t
+
+    def skip_comments(self):
+        while True:
+            t = self.cur()
+            if t.kind in ("COMMENT", "NEWLINE", "WHITESPACE"):
+                self.i += 1
+                continue
+            break
+
+    def make_token_node(self, t):
+        return CSTToken(
+            span=Span(t.start.index, t.end.index),
+            text=t.text
+        )
+
+    def parse(self) -> CSTDict:
+        self.skip_comments()
+        start = self.cur().start.index
+        entries: List[CSTEntry] = []
+
+        while self.cur().kind in ("WORD", "DIRECTIVE"):
+            self.skip_comments()
+            if self.cur().kind not in ("WORD", "DIRECTIVE"):
+                break
+            entries.append(self.parse_entry())
+            self.skip_comments()
+
+        self.skip_comments()
+
+        if (
+                self.cur().kind == "NUMBER"
+                and self.i + 1 < len(self.tokens)
+                and self.tokens[self.i + 1].kind == "PUNCT"
+                and self.tokens[self.i + 1].text == "("
+        ):
+            count_tok = self.make_token_node(self.eat("NUMBER"))
+            self.skip_comments()
+
+            lst = self.parse_list()
+
+            fake_key = CSTToken(span=count_tok.span, text=count_tok.text)
+            entries.append(
+                CSTEntry(
+                    span=Span(count_tok.span.start, lst.span.end),
+                    key_token=fake_key,
+                    value_node=lst
+                )
+            )
+
+        end = self.cur().end.index
+        return CSTDict(span=Span(start, end), entries=entries)
+
+
+    def parse_entry(self) -> CSTEntry:
+        self.skip_comments()
+        t = self.cur()
+
+        if t.kind not in ("WORD", "DIRECTIVE", "STRING"):
+            raise ParseError(f"Expected key, got {t.kind} at {t.start}")
+
+        key_tok = self.eat()
+        key_node = self.make_token_node(key_tok)
+
+        if key_tok.kind == "STRING":
+            key_node.text = key_tok.text
+
+        self.skip_comments()
+        value_node = self.parse_value()
+
+        if value_node is None:
+            pos = self.cur().start.index
+            value_node = CSTEmpty(span=Span(pos, pos))
+
+        semi = None
+        self.skip_comments()
+        if self.cur().kind == "PUNCT" and self.cur().text == ";":
+            semi = self.make_token_node(self.eat("PUNCT", ";"))
+
+        return CSTEntry(
+            span=Span(key_node.span.start, value_node.span.end),
+            key_token=key_node,
+            value_node=value_node,
+            semi_token=semi
+        )
+
+    def parse_value(self) -> CSTNode:
+        self.skip_comments()
+        t = self.cur()
+
+        if t.kind == "PUNCT" and t.text == "{":
+            return self.parse_dict_block()
+        if t.kind == "PUNCT" and t.text == "(":
+            return self.parse_list()
+
+        if t.kind == "EOF" or (t.kind == "PUNCT" and t.text in (";", "}", ")")):
+            pos = t.start.index
+            return CSTEmpty(span=Span(pos, pos))
+
+        parts: list[CSTNode] = []
+        start = t.start.index
+
+        while True:
+            self.skip_comments()
+            t = self.cur()
+
+            if t.kind == "EOF":
+                break
+            if t.kind == "PUNCT" and t.text in (";", "}", ")"):
+                break
+
+            if t.kind == "PUNCT" and t.text == "{":
+                parts.append(self.parse_dict_block())
+                continue
+            if t.kind == "PUNCT" and t.text == "(":
+                parts.append(self.parse_list())
+                continue
+
+            parts.append(self.make_token_node(self.eat()))
+
+        if not parts:
+            return CSTEmpty(span=Span(start, start))
+
+        if len(parts) == 1:
+            return parts[0]
+
+        return CSTSeq(span=Span(start, parts[-1].span.end), parts=parts)
+
+    def parse_dict_block(self) -> CSTDict:
+        lbrace = self.eat("PUNCT", "{")
+        lnode = self.make_token_node(lbrace)
+
+        entries = []
+
+        while True:
+            self.skip_comments()
+            t = self.cur()
+
+            if t.kind == "PUNCT" and t.text == "}":
+                break
+            if t.kind == "EOF":
+                break
+
+            if t.kind in ("WORD", "DIRECTIVE", "STRING"):
+                entries.append(self.parse_entry())
+                continue
+
+            raise ParseError(f"Expected key, got {t.kind} at {t.start}")
+
+        rbrace = None
+        if self.cur().kind == "PUNCT" and self.cur().text == "}":
+            rbrace = self.make_token_node(self.eat("PUNCT", "}"))
+
+        return CSTDict(
+            span=Span(lbrace.start.index, (rbrace.span.end if rbrace else lbrace.end.index)),
+            lbrace=lnode,
+            entries=entries,
+            rbrace=rbrace
+        )
+
+    def parse_list(self):
+        lparen = self.eat("PUNCT", "(")
+        items = self.parse_list_body()
+        rparen = self.eat("PUNCT", ")")
+        return CSTList(
+            span=Span(lparen.start.index, rparen.end.index),
+            items=items,
+            lparen=self.make_token_node(Token("PUNCT", "(", lparen.start, lparen.end)),
+            rparen=self.make_token_node(Token("PUNCT", ")", rparen.start, rparen.end)),
+        )
+
+    def parse_list_item(self):
+        t = self.cur()
+
+        if t.kind in ("WORD", "STRING", "NUMBER"):
+            head_tok = self.make_token_node(self.eat())
+
+            self.skip_comments()
+            nt = self.cur()
+
+            if nt.kind == "PUNCT" and nt.text == "(":
+                body = self.parse_list()
+                return CSTCompound(
+                    span=Span(head_tok.span.start, body.span.end),
+                    head=head_tok,
+                    body=body
+                )
+
+            if nt.kind == "PUNCT" and nt.text == "{":
+                body = self.parse_dict_block()
+                return CSTCompound(
+                    span=Span(head_tok.span.start, body.span.end),
+                    head=head_tok,
+                    body=body
+                )
+
+            return head_tok
+
+        if t.kind == "PUNCT" and t.text == "(":
+            return self.parse_list()
+
+        if t.kind == "PUNCT" and t.text == "{":
+            return self.parse_dict_block()
+
+        if t.kind == "PUNCT" and t.text == ";":
+            self.eat()
+            return None
+
+        raise ParseError(f"Unexpected token in list: {t.kind} at {t.start}")
+
+    def parse_list_body(self):
+        items = []
+
+        while True:
+            self.skip_comments()
+            t = self.cur()
+
+            if t.kind == "EOF":
+                raise ParseError(f"Unterminated list body at {t.start}")
+
+            if t.kind == "PUNCT" and t.text == ")":
+                return items
+
+            prev_i = self.i
+            item = self.parse_list_item()
+
+            if self.i == prev_i:
+                raise ParseError(
+                    f"Parser stalled in list at {self.cur().start}"
+                )
+
+            if item is not None:
+                items.append(item)
+
+    def peek_next_non_comment(self):
+        j = self.i + 1
+        while j < len(self.tokens):
+            if self.tokens[j].kind in ("COMMENT", "NEWLINE", "WHITESPACE"):
+                j += 1
+                continue
+            return self.tokens[j]
+        return None
+
+
+def parse_cst(text: str) -> CSTDict:
+    tokens = lex(text)
+    return Parser(tokens).parse()

@@ -1,0 +1,119 @@
+import sys
+import numpy as np
+from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QFileDialog
+import pyqtgraph as pg
+
+
+class TimeSeriesPlotWidget(pg.PlotWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.setBackground("w")  # 흰색 배경
+        self.showGrid(x=True, y=True, alpha=0.4)
+
+        self.plotItem.setLabel("bottom", "Time(s)")
+        self.plotItem.setLabel("left", "Pressure Fluctuation(bar)")
+
+        # 범례 추가
+        self.legend = self.plotItem.addLegend(offset=(10, 10))
+
+        # 라인 핸들 저장용
+        self.raw_curve = None
+        self.mean_curve = None
+
+    def plot_data(self, time, raw, mean):
+        self.clear()
+        self.legend = self.plotItem.addLegend(offset=(10, 10))
+
+        self.raw_curve = self.plot(time, raw,
+                                   pen=pg.mkPen(color=(255, 0, 0), width=1),
+                                   name="Raw Data")
+
+        self.mean_curve = self.plot(time, mean,
+                                    pen=pg.mkPen(color=(0, 0, 255), width=2),
+                                    name="Mean Data")
+
+        # 자동 스케일
+        self.enableAutoRange()
+
+
+class MainWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle("Pressure Time Series Viewer")
+
+        layout = QVBoxLayout(self)
+        self.setLayout(layout)
+
+        # Plot Widget
+        self.plot_widget = TimeSeriesPlotWidget()
+        layout.addWidget(self.plot_widget)
+
+        # Load Button
+        self.btn_load = QPushButton("Load Raw/Mean Data File")
+        self.btn_load.clicked.connect(self.load_file)
+        layout.addWidget(self.btn_load)
+
+    def load_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Data File",
+            "",
+            "Data Files (*.dat *.txt *.csv);;All Files (*)"
+        )
+        if not file_path:
+            return
+
+        # 파일 읽기 (예: time, raw, mean 형식으로 가정)
+        time, raw, mean = self.read_data_file(file_path)
+
+        self.plot_widget.plot_data(time, raw, mean)
+
+    def read_data_file(self, file_path):
+        """
+        데이터 파일을 읽어서 time, raw, mean 을 반환합니다.
+
+        - 2 컬럼 (time, raw) 인 경우:
+            mean 은 raw 의 이동 평균으로 계산합니다.
+        - 3 컬럼 이상인 경우:
+            time = 1열, raw = 2열, mean = 3열 로 사용합니다.
+        """
+
+        # 공백/탭/지수형(0.6891E-01) 모두 자동 처리
+        data = np.loadtxt(file_path)
+
+        # 1차원(단일 컬럼) 파일은 지원하지 않음
+        if data.ndim == 1:
+            raise ValueError("데이터 파일에 최소 2개 이상의 컬럼이 필요합니다.")
+
+        ncols = data.shape[1]
+
+        # 공통: 첫 컬럼은 시간
+        time = data[:, 0]
+
+        if ncols == 2:
+            # [time, raw] 만 있는 경우
+            raw = data[:, 1]
+
+            # 이동 평균 윈도우 크기 (데이터 길이에 따라 적당히 조정)
+            # 전체의 1/10 정도, 최대 500, 최소 1
+            window = max(1, min(500, len(raw) // 10 if len(raw) > 10 else 1))
+
+            kernel = np.ones(window, dtype=float) / window
+            mean = np.convolve(raw, kernel, mode="same")
+
+        else:
+            # 3컬럼 이상이면 앞의 3개를 사용 (time, raw, mean)
+            raw = data[:, 1]
+            mean = data[:, 2]
+
+        return time, raw, mean
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    win = MainWindow()
+    win.resize(1200, 600)
+    win.show()
+    sys.exit(app.exec())

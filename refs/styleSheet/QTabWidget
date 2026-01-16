@@ -1,0 +1,90 @@
+# Setting ----------------------------------------------------------------------
+self._ui.tabWidget.tabBar().setExpanding(True)
+useScrollButtons: False
+
+
+# Set defaults -----------------------------------------------------------------
+QTabWidget::tab-bar {
+    left: 6px;
+}
+QTabBar::tab {
+	min-width: 100;  /* 글자 크기에 따라 변경 */
+	min-height: 30; /* 탭바 높이 */
+}
+QTabBar::tab:hover:!selected{
+	border: 1px solid #bbbbbb;
+	border-radius: 2px;
+	border-bottom-color: #bbbbbb;
+	background-color: #eeeeee;
+    margin-top: 2px;
+	margin-bottom: 2px;
+}
+/*
+QTabBar::tab:hover {
+	border: 1px solid #bbbbbb;
+	border-bottom: none;
+	border-radius: 2px;
+	background-color: #eeeeee;
+	margin-top: 2px;
+}
+*/
+/*
+QTabBar::tab:hover:selected{
+	border: 1px solid #bbbbbb;
+	border-bottom: none;
+	border-radius: 2px;
+	background-color: #ffffff;
+	margin-bottom: 2px;
+}
+*/
+
+# Orange Style -----------------------------------------------------------------
+QTabWidget::tab-bar {
+    left: 6px;
+}
+QTabBar::tab {
+    min-width: 100;
+	min-height: 30;
+}
+
+QTabBar::tab:hover:selected{
+	border: 1px solid darkorange;
+	border-bottom: none;
+	border-radius: 2px;
+	background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1, stop: 0 #FFE5B5, stop: 1 #FCBE4C);
+	margin-bottom: 2px;
+}
+
+QTabBar::tab:hover:!selected{
+	border: 1px solid darkorange;
+	border-radius: 2px;
+	background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1, stop: 0 #FFE5B5, stop: 1 #FCBE4C);
+	margin-top: 2px;
+	margin-bottom: 2px;
+}
+
+
+# Blue Style -------------------------------------------------------------------
+QTabWidget::tab-bar {
+    left: 6px;
+}
+QTabBar::tab {
+    min-width: 100;
+	min-height: 30;
+}
+
+QTabBar::tab:hover:selected{
+	border: 1px solid #bbbbbb;
+	border-bottom: none;
+	border-radius: 2px;
+	background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1, stop: 0 #FFE5B5, stop: 1 #FCBE4C);
+	margin-bottom: 2px;
+}
+
+QTabBar::tab:hover:!selected{
+	border: 1px solid #bbbbbb;
+	border-radius: 2px;
+	background: #eeeeee;
+	margin-top: 2px;
+	margin-bottom: 2px;
+}

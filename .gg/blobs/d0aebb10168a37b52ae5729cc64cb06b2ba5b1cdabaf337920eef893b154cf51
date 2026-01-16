@@ -1,0 +1,450 @@
+# api.py
+from pathlib import Path
+import re
+
+from .parser import parse_cst
+from .builder import build_ast
+from .editor import FoamEditor
+from .rewriter import Rewriter
+from .formatter import format_value   # 기존 formatter 있으면 사용
+
+class FoamDict:
+    def __init__(self, path: str | Path = ''):
+        self.path = Path(path)
+        self.encoding = "utf-8"
+
+        self.text = ''
+        self.cst = None
+        self.ast = None
+        self.editor = None
+        self.rewriter = None
+
+        self._initialize()
+
+    def _initialize(self):
+        self.update()
+
+    def update(self, path: str | Path = ''):
+        if path:
+            self.path = Path(path)
+
+        if self.path.is_file():
+            self.text = self.path.read_text(encoding="utf-8")
+            self.cst = parse_cst(self.text)
+            self.ast = build_ast(self.cst)
+            self.editor = FoamEditor(self.ast)
+            self.rewriter = Rewriter(self.text)
+
+    def get(self, route=[], default=None):
+        if not self.text:
+            return None
+
+        return self.editor.get(route, default=default)
+
+    def set(
+            self,
+            route,
+            value,
+            *,
+            create=True,
+            before=None,
+            after=None,
+            list_style="multiline"
+    ):
+        """
+        Set value at route.
+        If create=True and key does not exist, insert it.
+        """
+
+        # -----------------------------------------
+        # 1. key 존재 여부 확인
+        # -----------------------------------------
+        try:
+            entry = self._locate_cst_entry(route)
+        except KeyError:
+            entry = None
+
+        # -----------------------------------------
+        # 2. 없고 create=False → 기존 동작
+        # -----------------------------------------
+        if entry is None:
+            if not create:
+                raise KeyError(f"Route not found: {route}")
+
+            # -------------------------------------
+            # 3. create=True → insert로 전환
+            # -------------------------------------
+            parent_route = route[:-1]
+            key = route[-1]
+
+            self.insert(
+                route=parent_route,
+                key=key,
+                value=value,
+                before=before,
+                after=after,
+                list_style=list_style
+            )
+            return
+
+        # -----------------------------------------
+        # 3. key 존재 + before/after 지정 → 재배치
+        # -----------------------------------------
+        if entry is not None and (before is not None or after is not None):
+            # 기존 엔트리 제거
+            self.delete(route, missing_ok=False)
+
+            # 원하는 위치에 재삽입 (before/after 적용)
+            parent_route = route[:-1]
+            key = route[-1]
+            self.insert(
+                route=parent_route,
+                key=key,
+                value=value,
+                before=before,
+                after=after,
+                list_style=list_style
+            )
+            return
+
+
+        # -----------------------------------------
+        # 기존 key → replace (FINAL)
+        # -----------------------------------------
+        entry = self._locate_cst_entry(route)
+        cst_entry = entry.cst_entry
+
+        text = self.text
+
+        # key 토큰 시작 위치
+        key_start = cst_entry.key_token.span.start
+
+        # 해당 줄의 시작
+        line_start = text.rfind("\n", 0, key_start) + 1
+
+        # 기존 indent 그대로
+        indent = text[line_start:key_start]
+
+        key = route[-1]
+        key_pad = f"{key:<16}"
+        value_text = format_value(
+            value,
+            key=key,
+            indent=indent,
+            list_style=list_style
+        )
+
+        new_text = f"{indent}{key_pad}{value_text}"
+
+        # 🔥 반드시 line_start부터 replace
+        self.rewriter.replace(line_start, cst_entry.span.end, new_text)
+
+    def _locate_cst_entry(self, route):
+        """
+        Locate CSTEntry for given route.
+        route: ["3", "inlet", "type"]
+        """
+        if not route:
+            raise KeyError("Empty route")
+
+        # AST 기준으로 먼저 탐색
+        node = self.editor.get_node(route)
+
+        if node is None:
+            raise KeyError(f"Route not found: {route}")
+
+        # node는 ASTValue 또는 ASTDict
+        # 반드시 ASTEntry를 거쳐야 replace 가능
+        parent_route = route[:-1]
+        key = route[-1]
+
+        parent = self.editor.get_node(parent_route)
+
+        if parent is None or not hasattr(parent, "entries"):
+            raise KeyError(f"Parent route not found: {parent_route}")
+
+        entry = parent.entries.get(key)
+
+        if entry is None:
+            raise KeyError(f"Key not found: {key}")
+
+        if entry.cst_entry is None:
+            # boundary named-dict 등: replace 불가
+            raise KeyError(
+                f"Entry '{key}' has no CST entry (cannot replace directly)"
+            )
+
+        return entry
+
+    def dumps(self):
+        return self.rewriter.apply()
+
+    def save(self, backup=True):
+        # if backup:
+        #     bak = self.path.with_suffix(self.path.suffix + ".bak")
+        #     bak.write_text(self.text, encoding=self.encoding)
+
+        new_text = self.dumps()
+        self.path.write_text(new_text, encoding=self.encoding)
+        self.text = new_text
+
+    def insert(
+            self,
+            route,
+            key,
+            value,
+            *,
+            before=None,
+            after=None,
+            list_style="multiline"
+    ):
+        parent = self.editor.get_node(route)
+
+        if parent is None or not hasattr(parent, "entries"):
+            raise TypeError(f"Insert target is not a dict: {route}")
+
+        if key in parent.entries:
+            raise KeyError(f"Key already exists: {key}")
+
+        if not hasattr(parent, "cst_node") or parent.cst_node is None:
+            raise RuntimeError("Parent ASTDict has no CST node")
+
+        cst_dict = parent.cst_node
+
+        # -----------------------------------------
+        # 기준 entry 결정
+        # -----------------------------------------
+        ref_entry = None
+        insert_after = True
+
+        # 🔥 명시적 first / last
+        if before == "__first__":
+            first_key = next(iter(parent.entries), None)
+            if first_key:
+                ref_entry = parent.entries[first_key]
+                insert_after = False
+
+        elif before == "__last__":
+            last_key = next(reversed(parent.entries), None)
+            if last_key:
+                ref_entry = parent.entries[last_key]
+                insert_after = False
+
+        elif after == "__last__":
+            last_key = next(reversed(parent.entries), None)
+            if last_key:
+                ref_entry = parent.entries[last_key]
+                insert_after = True
+
+        elif before:
+            ref_entry = parent.entries.get(before)
+            insert_after = False
+            if ref_entry is None:
+                raise KeyError(f"before key not found: {before}")
+
+        elif after:
+            ref_entry = parent.entries.get(after)
+            insert_after = True
+            if ref_entry is None:
+                raise KeyError(f"after key not found: {after}")
+
+        # -----------------------------------------
+        # 들여쓰기 계산
+        # -----------------------------------------
+        if route == []:
+            indent = ""
+        else:
+            indent = self._infer_indent(cst_dict)
+
+        key_pad = f"{key:<16}"
+        value_text = format_value(
+            value,
+            key=key,
+            indent=indent,
+            list_style=list_style
+        )
+
+        # -----------------------------------------
+        # new entry text 생성 (FIXED)
+        # -----------------------------------------
+        is_multiline_list = isinstance(value, (list, tuple)) and list_style == "multiline"
+
+        if is_multiline_list:
+            # 🔥 key 단독 줄 + 다음 줄에 괄호
+            body = (
+                f"{indent}{key}\n"
+                f"{value_text};\n"
+            )
+        else:
+            body = f"{indent}{key_pad}{value_text};\n"
+
+        # 루트면 위/아래 빈 줄만 추가 (형태에는 관여 ❌)
+        if route == []:
+            new_entry_line = f"\n{body}\n"
+        else:
+            new_entry_line = body
+
+        # -----------------------------------------
+        # 삽입 위치 계산 (FIXED ORDER)
+        # -----------------------------------------
+        text = self.text
+
+        # 1️⃣ before="__first__"
+        if before == "__first__" and parent.entries:
+            first_entry = next(iter(parent.entries.values()))
+            entry_start = (
+                first_entry.cst_entry.span.start
+                if first_entry.cst_entry
+                else first_entry.value_node.cst_node.span.start
+            )
+            pos = text.rfind("\n", 0, entry_start) + 1
+
+        # 2️⃣ before / after 특정 키
+        elif ref_entry and ref_entry.cst_entry:
+            span = ref_entry.cst_entry.span
+
+            if insert_after:
+                # 🔥 엔트리 전체(멀티라인 포함) 끝 다음 줄
+                line_end = text.find("\n", span.end)
+                if line_end == -1:
+                    pos = span.end
+                else:
+                    pos = line_end + 1
+            else:
+                # before: 해당 엔트리 줄 시작
+                pos = text.rfind("\n", 0, span.start) + 1
+
+        # 3️⃣ 빈 dict
+        elif not parent.entries:
+            open_brace_pos = cst_dict.span.start
+            line_end = text.find("\n", open_brace_pos)
+            if line_end == -1:
+                line_end = cst_dict.span.start + 1
+            pos = line_end + 1
+
+        # 4️⃣ 루트 + footer (fallback)
+        elif route == []:
+            footer_pos = self._find_footer_pos(text)
+            if footer_pos is not None:
+                footer_line_start = text.rfind("\n", 0, footer_pos)
+                pos = footer_line_start + 1 if footer_line_start != -1 else 0
+            else:
+                pos = len(text)
+
+        # 5️⃣ 기본: 마지막
+        else:
+            close_brace_pos = cst_dict.span.end
+            pos = text.rfind("\n", 0, close_brace_pos) + 1
+
+        # -----------------------------------------
+        # 실제 삽입 (개행 보정)
+        # -----------------------------------------
+        self.rewriter.insert(pos, new_entry_line)
+
+    def _infer_indent(self, cst_dict):
+        text = self.text
+        start = cst_dict.span.start
+        line_start = text.rfind("\n", 0, start) + 1
+        base_indent = text[line_start:start]
+
+        # dict 내부는 한 단계 더 들여씀
+        return base_indent + "    "
+
+    def _find_footer_pos(self, text):
+        """
+        Find position just before footer comment like:
+        // **************
+        """
+        for match in re.finditer(r"^\s*//\s*\*{5,}.*$", text, re.MULTILINE):
+            # footer 첫 줄 시작 위치
+            line_start = match.start()
+            return line_start
+        return None
+
+    def remove(self, route, *, missing_ok=False):
+        """
+        Delete entry or dict at route.
+        Examples:
+            ["2", "inlet", "type"]  -> entry 삭제
+            ["2", "inlet"]          -> dict 전체 삭제
+        """
+
+        if not route:
+            raise ValueError("Empty route")
+
+        text = self.text
+
+        # -----------------------------------------
+        # 1. 부모 및 entry 확인
+        # -----------------------------------------
+        parent_route = route[:-1]
+        key = route[-1]
+
+        parent = self.editor.get_node(parent_route)
+
+        if parent is None or not hasattr(parent, "entries"):
+            if missing_ok:
+                return
+            raise KeyError(f"Parent route not found: {parent_route}")
+
+        entry = parent.entries.get(key)
+
+        if entry is None:
+            if missing_ok:
+                return
+            raise KeyError(f"Key not found: {key}")
+
+        # -----------------------------------------
+        # 2. dict entry 인지 판단
+        # -----------------------------------------
+        is_dict = hasattr(entry.value_node, "cst_node") and entry.value_node.cst_node
+
+        # -----------------------------------------
+        # 3. 삭제 범위 계산
+        # -----------------------------------------
+        if is_dict:
+            # 🔥 dict 전체 삭제
+            key_span = entry.cst_entry.span
+            dict_span = entry.value_node.cst_node.span
+
+            start = key_span.start
+            end = dict_span.end
+
+            # key 줄 시작
+            line_start = text.rfind("\n", 0, start)
+            if line_start == -1:
+                line_start = 0
+            else:
+                line_start += 1
+
+            # dict 닫힘 다음 줄
+            line_end = text.find("\n", end)
+            if line_end == -1:
+                line_end = end
+            else:
+                line_end += 1
+
+            self.rewriter.replace(line_start, line_end, "")
+
+        else:
+            # 🔥 일반 entry 삭제 (한 줄)
+            cst_entry = entry.cst_entry
+            start = cst_entry.span.start
+            end = cst_entry.span.end
+
+            line_start = text.rfind("\n", 0, start)
+            if line_start == -1:
+                line_start = 0
+            else:
+                line_start += 1
+
+            line_end = text.find("\n", end)
+            if line_end == -1:
+                line_end = end
+            else:
+                line_end += 1
+
+            self.rewriter.replace(line_start, line_end, "")
+
+
+

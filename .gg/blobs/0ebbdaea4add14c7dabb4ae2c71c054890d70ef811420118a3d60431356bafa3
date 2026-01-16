@@ -1,0 +1,84 @@
+from pathlib import Path
+from PySide6.QtWidgets import QFileDialog
+
+# Filter Option
+# (ex) ext: "CAD Files (*.stp *.step);;STL Files (*.stl);;All Files (*)"
+
+class DirDialogBox:
+    @staticmethod
+    def open_folder(parent=None, title="Select Folder",
+                    path: Path | None = None) -> Path | None:
+        dlg = QFileDialog(parent)
+        dlg.setWindowTitle(title)
+        dlg.setFileMode(QFileDialog.Directory)
+        dlg.setOption(QFileDialog.ShowDirsOnly, True)
+
+        if path:
+            dlg.setDirectory(str(path))
+
+        if dlg.exec():
+            return dlg.selectedFiles()[0]
+        return None
+
+    @staticmethod
+    def save_folder(parent=None, title="Select Folder (Save To)",
+                    path: Path | None = None) -> Path | None:
+        dlg = QFileDialog(parent)
+        dlg.setWindowTitle(title)
+        dlg.setFileMode(QFileDialog.Directory)
+        dlg.setAcceptMode(QFileDialog.AcceptSave)
+        dlg.setOption(QFileDialog.ShowDirsOnly, True)
+
+        if path:
+            dlg.setDirectory(str(path))
+
+        if dlg.exec():
+            return dlg.selectedFiles()[0]
+        return None
+
+
+class FileDialogBox:
+    @staticmethod
+    def open_file(parent=None, title="Open File",
+                  filters="All Files (*)", path: Path | None = None) -> Path | None:
+        dlg = QFileDialog(parent)
+        dlg.setWindowTitle(title)
+        dlg.setNameFilter(filters)
+        dlg.setFileMode(QFileDialog.ExistingFile)
+
+        if path:
+            dlg.setDirectory(str(path))
+
+        if dlg.exec():
+            return dlg.selectedFiles()[0]
+        return None
+
+    @staticmethod
+    def open_files(parent=None, title="Open Files",
+                   filters="All Files (*)", path: Path | None = None) -> list[Path]:
+        dlg = QFileDialog(parent)
+        dlg.setWindowTitle(title)
+        dlg.setNameFilter(filters)
+        dlg.setFileMode(QFileDialog.ExistingFiles)
+
+        if path:
+            dlg.setDirectory(str(path))
+
+        if dlg.exec():
+            return [p for p in dlg.selectedFiles()]
+        return []
+
+    @staticmethod
+    def save_file(parent=None, title="Save File",
+                  filters="All Files (*)", path: Path | None = None) -> Path | None:
+        dlg = QFileDialog(parent)
+        dlg.setWindowTitle(title)
+        dlg.setAcceptMode(QFileDialog.AcceptSave)
+        dlg.setNameFilter(filters)
+
+        if path:
+            dlg.setDirectory(str(path))
+
+        if dlg.exec():
+            return dlg.selectedFiles()[0]
+        return None

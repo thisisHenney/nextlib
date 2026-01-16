@@ -1,0 +1,27 @@
+from pathlib import Path
+from nextlib.openfoam.PyFoamDict.FoamCase import FoamCase
+from nextlib.openfoam.PyFoamDict.FoamWrite import FoamWrite
+
+# Office
+root_path = rf"C:\Users\thisi\OneDrive\바탕 화면\FoamCase"
+
+# Home
+# root_path = rf"C:\Users\thisi\OneDrive\바탕 화면\TestCase\simplefoam"
+root_path = rf"C:\Users\thisi\OneDrive\바탕 화면\TestCase\TestchemkinCase"
+# root_path = rf"C:\Users\thisi\OneDrive\바탕 화면\TestCase\Test1"
+
+if __name__ == "__main__":
+    case = FoamCase(root_path)
+    # print(case.keys())
+
+    # result = case.set_value("boundary", "2.upperWall.inGroups", ["wall", "empty"])
+    # print(result)
+
+    result = case.get_value("controlDict", "application")
+    print(result)
+
+    case.save("controlDict")
+
+
+    # result = case.get_value("regionProperties", "regions")
+    # print(result)

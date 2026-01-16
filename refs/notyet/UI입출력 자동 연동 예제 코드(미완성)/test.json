@@ -1,0 +1,28 @@
+{
+  "항목1": {
+    "line": "값1",
+    "combo": [
+      "A",
+      "B",
+      "C"
+    ],
+    "combo_index": 0
+  },
+  "항목2": {
+    "line": "값2",
+    "combo": [
+      "X",
+      "Y"
+    ],
+    "combo_index": 1
+  },
+  "항목3": {
+    "line": "값3",
+    "combo": [
+      "M",
+      "N",
+      "O"
+    ],
+    "combo_index": 2
+  }
+}

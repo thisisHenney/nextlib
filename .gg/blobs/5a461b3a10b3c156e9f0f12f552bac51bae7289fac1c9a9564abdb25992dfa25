@@ -1,0 +1,64 @@
+import re
+from typing import Tuple, Optional
+
+
+def change_key_value(content: str, key_name: str, old_value: str, new_value: str) -> str:
+    """
+    OpenFOAM controlDict에서 키의 값만 변경 (값 끝까지 교체)
+    """
+    # 1단계: 모든 탭을 4칸 스페이스로 변환
+    content = content.expandtabs(4)
+
+    def replace_value_match(match: re.Match) -> str:
+        nonlocal new_value  # new_value를 함수 내부로 가져옴
+        key_part = match.group(1)  # "startFrom"
+        spaces = match.group(2)  # 공백들
+        value_part = match.group(3)  # "startTime; // 주석"
+
+        # 새 값에 세미콜론 추가 (없으면)
+        if not new_value.endswith(';'):
+            new_value += ';'
+
+        # 키+공백 + 새 값
+        return f"{key_part}{spaces}{new_value}"
+
+    # 패턴: 키명 + 공백 + 기존값(+세미콜론+주석)
+    pattern = rf'(\b{re.escape(key_name)}\b)([ \t]+)({re.escape(old_value)}[^;\n]*[;]?)'
+    new_content = re.sub(pattern, replace_value_match, content, flags=re.MULTILINE)
+
+    return new_content
+
+
+# 테스트 함수 (수정됨)
+def test_change_value():
+    """값 변경 테스트"""
+    original = """startFrom       startTime;	// 시작 시간
+endTime         0.5;           // 종료 시간
+deltaT          0.01;
+writeControl    timeStep;
+"""
+
+    print("=== 원본 ===")
+    print(original)
+    print()
+
+    # 테스트 1: startTime → latestTime
+    result1 = change_key_value(original, "startFrom", "startTime", "latestTime")
+    print("=== startTime → latestTime ===")
+    print(result1)
+    print()
+
+    # 테스트 2: 0.5 → 1.0 (숫자 변경)
+    result2 = change_key_value(original, "endTime", "0.5", "1.0")
+    print("=== 0.5 → 1.0 ===")
+    print(result2)
+    print()
+
+    # 테스트 3: timeStep → writeTime
+    result3 = change_key_value(original, "writeControl", "timeStep", "writeTime")
+    print("=== timeStep → writeTime ===")
+    print(result3)
+
+
+if __name__ == "__main__":
+    test_change_value()

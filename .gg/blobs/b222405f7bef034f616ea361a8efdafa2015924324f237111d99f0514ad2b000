@@ -1,0 +1,204 @@
+import sys
+import numpy as np
+from PySide6.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QFileDialog, QCheckBox
+)
+import pyqtgraph as pg
+
+
+# ==================================================
+# Multi-Y Plot Widget (Single Plot, 3 Y axes)
+# ==================================================
+class MultiYAxisPlot(pg.PlotWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.setBackground("w")
+        self.showGrid(x=True, y=True, alpha=0.4)
+
+        self.plotItem.setLabel("bottom", "Time(s)")
+        self.plotItem.setLabel("left", "Raw")
+
+        # 기본 ViewBox (Raw)
+        self.vb_raw = self.plotItem.vb
+
+        # 추가 ViewBox 2개
+        self.vb_filt = pg.ViewBox()
+        self.vb_mean = pg.ViewBox()
+
+        self.plotItem.scene().addItem(self.vb_filt)
+        self.plotItem.scene().addItem(self.vb_mean)
+
+        # 축 생성
+        self.ax_filt = pg.AxisItem("right")
+        self.ax_mean = pg.AxisItem("right")
+
+        self.plotItem.layout.addItem(self.ax_filt, 2, 3)
+        self.plotItem.layout.addItem(self.ax_mean, 2, 4)
+
+        self.ax_filt.setLabel("Filtered (10~10kHz)")
+        self.ax_mean.setLabel("Mean")
+
+        # ViewBox ↔ Axis 연결
+        self.ax_filt.linkToView(self.vb_filt)
+        self.ax_mean.linkToView(self.vb_mean)
+
+        self.vb_filt.setXLink(self.vb_raw)
+        self.vb_mean.setXLink(self.vb_raw)
+
+        # ViewBox 크기 동기화
+        self.vb_raw.sigResized.connect(self.update_views)
+
+        # Curves
+        self.curve_raw = pg.PlotDataItem(pen=pg.mkPen((255, 0, 0), width=1))
+        self.curve_filt = pg.PlotDataItem(pen=pg.mkPen((0, 200, 0), width=1))
+        self.curve_mean = pg.PlotDataItem(pen=pg.mkPen((0, 0, 255), width=2))
+
+        self.vb_raw.addItem(self.curve_raw)
+        self.vb_filt.addItem(self.curve_filt)
+        self.vb_mean.addItem(self.curve_mean)
+
+        self.plotItem.setDownsampling(mode="peak")
+
+    def update_views(self):
+        """추가 ViewBox를 메인 ViewBox와 정확히 겹치게"""
+        geom = self.vb_raw.sceneBoundingRect()
+        self.vb_filt.setGeometry(geom)
+        self.vb_mean.setGeometry(geom)
+
+    def set_visibility(self, show_raw, show_filt, show_mean):
+        self.curve_raw.setVisible(show_raw)
+        self.curve_filt.setVisible(show_filt)
+        self.curve_mean.setVisible(show_mean)
+
+        self.ax_filt.setVisible(show_filt)
+        self.ax_mean.setVisible(show_mean)
+
+    def set_data(self,
+                 time_raw=None, raw=None, mean=None,
+                 time_filt=None, filtered=None):
+
+        if time_raw is not None and raw is not None:
+            self.curve_raw.setData(time_raw, raw)
+            self.vb_raw.enableAutoRange(axis=pg.ViewBox.YAxis)
+
+        if time_filt is not None and filtered is not None:
+            self.curve_filt.setData(time_filt, filtered)
+            self.vb_filt.enableAutoRange(axis=pg.ViewBox.YAxis)
+
+        if time_raw is not None and mean is not None:
+            self.curve_mean.setData(time_raw, mean)
+            self.vb_mean.enableAutoRange(axis=pg.ViewBox.YAxis)
+
+
+# ==================================================
+# Main Window
+# ==================================================
+class MainWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Pressure Time Signal Viewer (Multi Y-Axis)")
+
+        self.time_raw = None
+        self.raw = None
+        self.mean = None
+
+        self.time_filt = None
+        self.filtered = None
+
+        layout = QVBoxLayout(self)
+
+        # Plot
+        self.plot = MultiYAxisPlot()
+        layout.addWidget(self.plot)
+
+        # Controls
+        ctrl = QHBoxLayout()
+
+        self.chk_raw = QCheckBox("Raw")
+        self.chk_raw.setChecked(True)
+        self.chk_raw.stateChanged.connect(self.update_plot)
+        ctrl.addWidget(self.chk_raw)
+
+        self.chk_filt = QCheckBox("Filtered")
+        self.chk_filt.setChecked(True)
+        self.chk_filt.stateChanged.connect(self.update_plot)
+        ctrl.addWidget(self.chk_filt)
+
+        self.chk_mean = QCheckBox("Mean")
+        self.chk_mean.setChecked(True)
+        self.chk_mean.stateChanged.connect(self.update_plot)
+        ctrl.addWidget(self.chk_mean)
+
+        ctrl.addStretch()
+        layout.addLayout(ctrl)
+
+        # Buttons
+        btn = QHBoxLayout()
+
+        b1 = QPushButton("Load Raw Data")
+        b1.clicked.connect(self.load_raw)
+        btn.addWidget(b1)
+
+        b2 = QPushButton("Load Filtered Data")
+        b2.clicked.connect(self.load_filtered)
+        btn.addWidget(b2)
+
+        layout.addLayout(btn)
+
+    def load_raw(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Raw File", "", "Data Files (*.dat *.txt)"
+        )
+        if not path:
+            return
+
+        data = np.loadtxt(path)
+        self.time_raw = data[:, 0]
+        self.raw = data[:, 1]
+        self.mean = self.calc_mean(self.raw)
+
+        self.update_plot()
+
+    def calc_mean(self, raw):
+        window = max(1, min(500, len(raw) // 10))
+        kernel = np.ones(window) / window
+        return np.convolve(raw, kernel, mode="same")
+
+    def load_filtered(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Filtered File", "", "Data Files (*.dat *.txt)"
+        )
+        if not path:
+            return
+
+        data = np.loadtxt(path)
+        self.time_filt = data[:, 0]
+        self.filtered = data[:, 1]
+
+        self.update_plot()
+
+    def update_plot(self):
+        self.plot.set_visibility(
+            self.chk_raw.isChecked(),
+            self.chk_filt.isChecked(),
+            self.chk_mean.isChecked()
+        )
+
+        self.plot.set_data(
+            time_raw=self.time_raw,
+            raw=self.raw,
+            mean=self.mean,
+            time_filt=self.time_filt,
+            filtered=self.filtered
+        )
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    win = MainWindow()
+    win.resize(1200, 700)
+    win.show()
+    sys.exit(app.exec())
+

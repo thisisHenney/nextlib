@@ -1,0 +1,130 @@
+
+defaults color: #eeeeee
+
+# Set Defaults -----------------------------------------------------------------
+QPushButton {
+    padding: 3px;   # font is ubuntu
+    color: #000000;
+    border: 1px solid #a0a0a0;
+	border-radius: 3px;
+    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
+                                stop: 0 #fcfcfc, stop: 1 #eeeeee);
+}
+
+QPushButton::disabled {
+	color: #aaaaaa;     /* font color */
+    border-radius: 3px;
+	background-color: #dddddd;
+}
+
+QPushButton::hover {
+    border: 1px solid darkgray;
+    border-radius: 3px;
+	background-color: #f9f9f9;
+}
+
+QPushButton::pressed {
+	background-color: #dddddd;
+/*    background-color: rgba(100, 100, 100, 65);*/
+}
+
+# Custom1 (Orange) -------------------------------------------------------------
+QPushButton {
+    padding: 3px;   # font is ubuntu
+    color: #000000;
+    border: 1px solid #a0a0a0;
+	border-radius: 3px;
+    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
+                                stop: 0 #fcfcfc, stop: 1 #eeeeee);
+}
+
+QPushButton::hover {
+	border: 1px solid darkorange;
+    border-radius: 3px;
+    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
+                                stop: 0 #ffe5b5, stop: 1 #fcbe4c);
+}
+
+QPushButton::pressed {
+	border: 1px solid orange;
+    border-radius: 3px;
+    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
+                                stop: 0 #fcbe4c, stop: 1 #ffe5b5);
+   /* or >> background-color: darkorange; */
+}
+
+
+
+# Custom 2 (Orange Button) -----------------------------------------------------
+QPushButton {
+    padding: 3px;
+    color: #000000;
+    border: 1px solid #a0a0a0;
+	border-radius: 3px;
+    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
+                                stop: 0 #fcfcfc, stop: 1 #eeeeee);
+}
+
+QPushButton::hover {
+	border: 1px solid darkorange;
+    border-radius: 3px;
+    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
+                                stop: 0 #ffe5b5, stop: 1 #fcbe4c);
+}
+
+QPushButton::pressed {
+	border: 1px solid orange;
+    border-radius: 3px;
+    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
+                                stop: 0 #fcbe4c, stop: 1 #ffe5b5);
+}
+
+# Custom 3 (Blue Button) -------------------------------------------------------
+QPushButton {
+    padding: 3px;   # font is ubuntu
+    color: #000000;
+    border: 1px solid #a0a0a0;
+	border-radius: 3px;
+    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
+                                stop: 0 #fcfcfc, stop: 1 #eeeeee);
+}
+
+QPushButton::hover {
+    border: 1px solid blue;
+    border-radius: 3px;
+	background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
+                                stop: 0 #e5f1fb, stop: 1 #c1e0fa);
+}
+
+QPushButton::pressed {
+    border: 1px solid blue;
+    border-radius: 3px;
+	background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
+                                stop: 0 #c1e0fa, stop: 1 #e5f1fb);
+}
+
+# Example ----------------------------------------------------------------------
+QPushButton {
+    padding: 3px;   # font is ubuntu
+    color: #333;
+    border: 1px solid #555;
+    border-radius: 2px;
+    background: qradialgradient(cx: 0.3, cy: -0.4,
+                                fx: 0.3, fy: -0.4,
+                                radius: 1.40, stop: 0 #fff, stop: 1 #888);
+    min-width: 80px;
+}
+
+QPushButton:hover {
+    background: qradialgradient(cx: 0.3, cy: -0.4,
+                                fx: 0.3, fy: -0.4,
+                                radius: 1.40, stop: 0 #fff, stop: 1 #bbb);
+}
+
+QPushButton:pressed {
+    background: qradialgradient(cx: 0.4, cy: -0.1,
+                                fx: 0.4, fy: -0.1,
+                                radius: 1.40, stop: 0 #fff, stop: 1 #ddd);
+}
+
+

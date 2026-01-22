@@ -4,6 +4,8 @@
 - 초기 카메라 설정
 - 6방향 뷰 전환 (front, back, left, right, top, bottom)
 - 투영 방식 전환 (perspective / orthographic)
+- 줌 인/아웃
+- 홈 뷰 (초기 뷰로 리셋)
 """
 from PySide6.QtCore import QObject, Signal
 from .cad_style import CADInteractorStyle
@@ -28,18 +30,28 @@ class Camera(QObject):
     def registry(self):
         return self._registry
 
-    def init(self):
-        """카메라 및 인터랙터 스타일 초기화"""
-        # CAD 스타일 인터랙터 설정
-        style = CADInteractorStyle(self, self._renderer)
-        self._interactor.SetInteractorStyle(style)
+    def init(self, obj_manager=None):
+        """카메라 및 인터랙터 스타일 초기화
 
-        # 초기 카메라 설정
+        Args:
+            obj_manager: ObjectManager 인스턴스 (더블클릭 선택용)
+        """
+        # CAD 스타일 인터랙터 설정
+        style = CADInteractorStyle(self, self._renderer, obj_manager)
+        self._interactor.SetInteractorStyle(style)
+        self._style = style  # 나중에 obj_manager 설정을 위해 저장
+
+        # 초기 카메라 설정 및 저장
         camera = self._renderer.GetActiveCamera()
         camera.SetFocalPoint(0.0, 0.0, 0.0)
         camera.SetPosition(0.0, -4.0, 2.5)
         camera.SetViewUp(0.0, 0.0, 1.0)
         camera.SetClippingRange(0.01, 1000)
+
+        # 홈 뷰를 위한 초기 상태 저장
+        self._home_position = (0.0, -4.0, 2.5)
+        self._home_focal_point = (0.0, 0.0, 0.0)
+        self._home_view_up = (0.0, 0.0, 1.0)
 
         self._renderer.ResetCameraClippingRange()
         self._render()
@@ -126,6 +138,39 @@ class Camera(QObject):
     def fit(self):
         """씬에 맞춰 카메라 리셋"""
         self._renderer.ResetCamera()
+        self._render()
+
+    def home(self):
+        """홈 뷰로 리셋 (초기 카메라 방향 + 씬에 맞춤)"""
+        camera = self._renderer.GetActiveCamera()
+        camera.SetPosition(*self._home_position)
+        camera.SetFocalPoint(*self._home_focal_point)
+        camera.SetViewUp(*self._home_view_up)
+        # 씬에 맞춰 카메라 거리 조정
+        self._renderer.ResetCamera()
+        self._render()
+        self.view_changed.emit("home")
+
+    def zoom_in(self, factor: float = 1.2):
+        """줌 인
+
+        Args:
+            factor: 줌 배율 (기본 1.2 = 20% 확대)
+        """
+        camera = self._renderer.GetActiveCamera()
+        camera.Dolly(factor)
+        self._renderer.ResetCameraClippingRange()
+        self._render()
+
+    def zoom_out(self, factor: float = 1.2):
+        """줌 아웃
+
+        Args:
+            factor: 줌 배율 (기본 1.2 = 20% 축소)
+        """
+        camera = self._renderer.GetActiveCamera()
+        camera.Dolly(1.0 / factor)
+        self._renderer.ResetCameraClippingRange()
         self._render()
 
     def get_vtk_camera(self):

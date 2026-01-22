@@ -23,9 +23,16 @@
 
     # OpenFOAM 케이스 로드
     actors = loader.load_openfoam("case.foam")
+
+    # 비동기 로드 (GUI 잠금 방지)
+    loader.load_async(["file1.stl", "file2.stl"])
+    loader.file_loaded.connect(on_file_loaded)
+    loader.all_finished.connect(on_all_finished)
 """
 from pathlib import Path
 from typing import List, Optional, Union, Tuple
+
+from PySide6.QtCore import QObject, Signal, QThread
 
 from vtkmodules.vtkRenderingCore import vtkPolyDataMapper, vtkActor, vtkDataSetMapper
 from vtkmodules.vtkCommonColor import vtkNamedColors
@@ -33,8 +40,63 @@ from vtkmodules.vtkFiltersCore import vtkPolyDataConnectivityFilter, vtkCleanPol
 from vtkmodules.vtkFiltersGeometry import vtkGeometryFilter
 
 
-class MeshLoader:
-    """다양한 메쉬 파일 포맷 로더"""
+class MeshLoaderWorker(QThread):
+    """비동기 메쉬 로딩을 위한 워커 스레드"""
+
+    file_loaded = Signal(str, str, object)  # (file_path, name, actor)
+    progress = Signal(int, int)  # (current, total)
+    finished_all = Signal()
+    error = Signal(str, str)  # (file_path, error_message)
+
+    def __init__(self, loader: "MeshLoader", files: List[str], parent=None):
+        super().__init__(parent)
+        self.loader = loader
+        self.files = files
+        self._cancelled = False
+
+    def run(self):
+        """백그라운드에서 파일 로드"""
+        total = len(self.files)
+        for i, file_path in enumerate(self.files):
+            if self._cancelled:
+                break
+
+            try:
+                path = Path(file_path)
+                name = path.stem
+                actor = self.loader.load(path)
+
+                if actor:
+                    self.file_loaded.emit(str(file_path), name, actor)
+                else:
+                    self.error.emit(str(file_path), "Failed to load file")
+            except Exception as e:
+                self.error.emit(str(file_path), str(e))
+
+            self.progress.emit(i + 1, total)
+
+        self.finished_all.emit()
+
+    def cancel(self):
+        """로딩 취소"""
+        self._cancelled = True
+
+
+class MeshLoader(QObject):
+    """다양한 메쉬 파일 포맷 로더
+
+    Signals:
+        file_loaded: 파일 로드 완료 (file_path, name, actor)
+        progress: 로딩 진행 상황 (current, total)
+        all_finished: 모든 파일 로드 완료
+        error: 로드 실패 (file_path, error_message)
+    """
+
+    # 비동기 로딩 시그널
+    file_loaded = Signal(str, str, object)  # (file_path, name, actor)
+    progress = Signal(int, int)  # (current, total)
+    all_finished = Signal()
+    error = Signal(str, str)  # (file_path, error_message)
 
     # 지원 확장자
     SUPPORTED_EXTENSIONS = {
@@ -43,9 +105,73 @@ class MeshLoader:
         '.foam', '.openfoam'
     }
 
-    def __init__(self):
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self.colors = vtkNamedColors()
         self._default_color = self.colors.GetColor3d("Gainsboro")
+        self._worker = None
+
+    def load_async(
+        self,
+        files: Union[str, Path, List[Union[str, Path]]],
+    ) -> None:
+        """비동기로 파일 로드 (GUI 잠금 방지)
+
+        로드 완료 시 file_loaded 시그널이 발생합니다.
+        모든 파일 로드 완료 시 all_finished 시그널이 발생합니다.
+
+        Args:
+            files: 파일 경로 또는 파일 경로 리스트
+
+        Usage:
+            loader = MeshLoader()
+            loader.file_loaded.connect(on_file_loaded)
+            loader.all_finished.connect(on_all_finished)
+            loader.load_async(["file1.stl", "file2.stl"])
+
+            def on_file_loaded(file_path, name, actor):
+                # actor를 렌더러에 추가
+                pass
+
+            def on_all_finished():
+                # 모든 로딩 완료 처리
+                pass
+        """
+        # 단일 파일을 리스트로 변환
+        if isinstance(files, (str, Path)):
+            files = [files]
+
+        # 문자열로 변환
+        file_list = [str(f) for f in files]
+
+        # 기존 워커가 있으면 취소
+        self.cancel_async()
+
+        # 새 워커 생성 및 시그널 연결
+        self._worker = MeshLoaderWorker(self, file_list, self)
+        self._worker.file_loaded.connect(self.file_loaded)
+        self._worker.progress.connect(self.progress)
+        self._worker.finished_all.connect(self._on_worker_finished)
+        self._worker.error.connect(self.error)
+
+        # 워커 시작
+        self._worker.start()
+
+    def cancel_async(self) -> None:
+        """비동기 로딩 취소"""
+        if self._worker and self._worker.isRunning():
+            self._worker.cancel()
+            self._worker.wait()
+            self._worker = None
+
+    def is_loading(self) -> bool:
+        """비동기 로딩 중인지 확인"""
+        return self._worker is not None and self._worker.isRunning()
+
+    def _on_worker_finished(self) -> None:
+        """워커 완료 처리"""
+        self._worker = None
+        self.all_finished.emit()
 
     def load(
         self,

@@ -5,6 +5,7 @@ from .geometry_source import GeometrySource
 from .mesh_loader import MeshLoader
 from .scene_state import SceneState, ObjectInfo
 from .command_history import CommandHistory, UndoableManager
+from .openfoam_reader import OpenFOAMReader
 
 __all__ = [
     "ObjectData",
@@ -17,4 +18,5 @@ __all__ = [
     "ObjectInfo",
     "CommandHistory",
     "UndoableManager",
+    "OpenFOAMReader",
 ]

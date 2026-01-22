@@ -53,12 +53,35 @@ class ObjectManager(QObject):
         self._outline_actors: Dict[int, vtkActor] = {}
         self._bbox_actor: Optional[vtkActor] = None
 
+        # 선택 시각화 옵션
+        self._show_individual_outlines = True  # 개별 객체 outline 표시 여부
+
         # 피커
         self._picker = None
 
         # 배치 모드
         self._batch_mode = False
         self._pending_render = False
+
+    # ===== 속성 =====
+
+    @property
+    def selected_ids(self) -> Set[int]:
+        """선택된 객체 ID 집합"""
+        return self._selected_ids.copy()
+
+    @property
+    def show_individual_outlines(self) -> bool:
+        """개별 객체 outline 표시 여부"""
+        return self._show_individual_outlines
+
+    @show_individual_outlines.setter
+    def show_individual_outlines(self, value: bool):
+        """개별 객체 outline 표시 여부 설정"""
+        self._show_individual_outlines = value
+        # 현재 선택이 있으면 시각화 업데이트
+        if self._selected_ids:
+            self._update_selection_visual()
 
     # ===== 배치 모드 =====
 
@@ -327,9 +350,8 @@ class ObjectManager(QObject):
                         break
 
             if picked_id is not None:
-                # 더블클릭: 단일 선택 + 포커스
+                # 더블클릭: 단일 선택 (포커스 없음)
                 self.select_single(picked_id)
-                self.focus_on(picked_id)
             else:
                 # 빈 공간 더블클릭: 선택 해제
                 self.clear_selection()
@@ -342,7 +364,7 @@ class ObjectManager(QObject):
                 self.clear_selection()
 
         interactor.AddObserver("LeftButtonPressEvent", on_click)
-        interactor.AddObserver("LeftButtonDoubleClickEvent", on_double_click)
+        # 더블클릭은 CADInteractorStyle에서 처리
         interactor.AddObserver("KeyPressEvent", on_key)
 
     # ===== 스타일 적용 =====
@@ -407,7 +429,9 @@ class ObjectManager(QObject):
                 prop = obj.actor.GetProperty()
                 if obj.id in self._selected_ids:
                     prop.SetOpacity(1.0)
-                    self._add_outline(obj)
+                    # 개별 outline 표시 옵션이 켜져 있을 때만 추가
+                    if self._show_individual_outlines:
+                        self._add_outline(obj)
                 else:
                     prop.SetOpacity(0.25)
 

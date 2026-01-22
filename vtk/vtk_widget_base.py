@@ -9,20 +9,24 @@ VTK 위젯 베이스 클래스
 """
 from functools import partial
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, Union, Dict, List
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QToolBar, QComboBox
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QToolBar, QComboBox, QFileDialog
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtCore import Signal
 
 import vtkmodules.vtkRenderingOpenGL2  # noqa: F401 (OpenGL 초기화 필요)
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 from vtkmodules.vtkRenderingCore import vtkRenderer
+import vtk
+
+# VTK 경고 메시지 비활성화 (non-manifold triangulation 등)
+vtk.vtkObject.GlobalWarningDisplayOff()
 
 from nextlib.vtk.camera import Camera
-from nextlib.vtk.core import ObjectManager, ObjectAccessor, GroupAccessor
+from nextlib.vtk.core import ObjectManager, ObjectAccessor, GroupAccessor, OpenFOAMReader
 from nextlib.vtk.core.scene_state import SceneState
-from nextlib.vtk.tool import AxesTool, RulerTool
+from nextlib.vtk.tool import AxesTool, RulerTool, PointProbeTool
 
 
 # 리소스 경로
@@ -55,6 +59,10 @@ class VtkWidgetBase(QWidget):
         self.obj_manager: Optional[ObjectManager] = None
         self.axes: Optional[AxesTool] = None
         self.ruler: Optional[RulerTool] = None
+
+        # 선택적 도구들
+        self._optional_tools: Dict[str, object] = {}
+        self._optional_tool_actions: Dict[str, QAction] = {}
 
         # UI 설정
         self._setup_ui()
@@ -91,14 +99,16 @@ class VtkWidgetBase(QWidget):
 
     def _setup_tools(self):
         """도구 초기화"""
-        # 카메라
-        self.camera = Camera(self)
-        self.camera.init()
-
-        # 객체 관리자
+        # 객체 관리자 (카메라보다 먼저 생성 - 더블클릭 선택 지원)
         self.obj_manager = ObjectManager(self.renderer)
-        self.obj_manager.set_picking_callback(self.interactor)
         self.obj_manager.selection_changed.connect(self._on_selection_changed)
+
+        # 카메라 (obj_manager 전달하여 더블클릭 선택 지원)
+        self.camera = Camera(self)
+        self.camera.init(self.obj_manager)
+
+        # Ctrl/Shift 클릭 및 Delete 키 콜백 설정
+        self.obj_manager.set_picking_callback(self.interactor)
 
         # 도구
         self.axes = AxesTool(self)
@@ -109,6 +119,39 @@ class VtkWidgetBase(QWidget):
 
     def _build_toolbar(self):
         """툴바 구성 - 서브클래스에서 오버라이드 가능"""
+        # ===== 카메라 뷰 =====
+        # Home
+        self._add_action("Home", "home.png", self.camera.home)
+
+        # 6방향 뷰
+        for name in ["Front", "Back", "Left", "Right", "Top", "Bottom"]:
+            self._add_action(
+                name, f"{name.lower()}.png",
+                partial(self.camera.set_view, name.lower())
+            )
+
+        self.toolbar.addSeparator()
+
+        # ===== 줌 & 피팅 =====
+        self._add_action("Zoom In", "zoom_in.png", lambda: self.camera.zoom_in())
+        self._add_action("Zoom Out", "zoom_out.png", lambda: self.camera.zoom_out())
+        self._add_action("Fit", "fit.png", self.fit_to_scene)
+
+        # 투영 방식 토글
+        self._projection_action = self._add_toggle_action(
+            "Projection", "perspective.png", "parallel.png",
+            self._on_projection_toggled, checked=False
+        )
+
+        self.toolbar.addSeparator()
+
+        # ===== 선택 도구 =====
+        self._add_action("Select All", "select_all.png", self._on_select_all)
+        self._add_action("Deselect", "deselect.png", self._on_clear_selection)
+
+        self.toolbar.addSeparator()
+
+        # ===== 뷰 보조 도구 =====
         # 축 토글
         self._axes_action = self._add_toggle_action(
             "Axes", "axes_on.png", "axes_off.png",
@@ -123,27 +166,12 @@ class VtkWidgetBase(QWidget):
 
         self.toolbar.addSeparator()
 
-        # 카메라 뷰
-        for name in ["Front", "Back", "Left", "Right", "Top", "Bottom"]:
-            self._add_action(
-                name, f"{name.lower()}.png",
-                partial(self.camera.set_view, name.lower())
-            )
+        # ===== 파일 로딩 =====
+        self._add_action("Load OpenFOAM", "openfoam.png", self._on_load_openfoam)
 
         self.toolbar.addSeparator()
 
-        # Fit
-        self._add_action("Fit", "fit.png", self.fit_to_scene)
-
-        # 투영 방식 토글
-        self._projection_action = self._add_toggle_action(
-            "Projection", "perspective.png", "parallel.png",
-            self._on_projection_toggled, checked=False
-        )
-
-        self.toolbar.addSeparator()
-
-        # 뷰 스타일 콤보박스
+        # ===== 뷰 스타일 =====
         self._view_combo = QComboBox()
         self._view_combo.addItems([
             "wireframe",
@@ -221,6 +249,91 @@ class VtkWidgetBase(QWidget):
         """뷰 스타일 변경"""
         self.obj_manager.all().style(style)
 
+    def _on_load_openfoam(self):
+        """OpenFOAM mesh 로딩"""
+        # 먼저 .foam 파일 선택 시도
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load OpenFOAM Case",
+            "",
+            "OpenFOAM Files (*.foam *.OpenFOAM);;All Files (*)"
+        )
+
+        if file_path:
+            self.load_openfoam_mesh(file_path)
+            return
+
+        # 파일 선택 취소 시 폴더 선택
+        folder_path = QFileDialog.getExistingDirectory(
+            self,
+            "Select OpenFOAM Case Folder",
+            ""
+        )
+
+        if folder_path:
+            self.load_openfoam_mesh(folder_path)
+
+    def load_openfoam_mesh(self, case_path: str) -> bool:
+        """OpenFOAM mesh를 로드하여 표시
+
+        Args:
+            case_path: .foam 파일 또는 케이스 폴더 경로
+
+        Returns:
+            성공 여부
+        """
+        if not OpenFOAMReader.is_available():
+            print("[VtkWidgetBase] OpenFOAM reader not available")
+            return False
+
+        reader = OpenFOAMReader()
+        if not reader.load(case_path):
+            return False
+
+        # Surface mesh 가져오기
+        surface = reader.get_surface()
+        if surface is None or surface.GetNumberOfPoints() == 0:
+            print("[VtkWidgetBase] No mesh data found")
+            return False
+
+        # 케이스 이름 추출
+        case_name = Path(case_path).stem
+        if Path(case_path).is_dir():
+            case_name = Path(case_path).name
+
+        # ObjectManager에 추가
+        from nextlib.vtk.core import ObjectData
+        obj = ObjectData(
+            polydata=surface,
+            name=f"OpenFOAM_{case_name}",
+            color=(0.8, 0.8, 0.8),
+            group="openfoam_mesh"
+        )
+        self.obj_manager.add(obj)
+
+        # 뷰 스타일 적용
+        current_style = self._view_combo.currentText()
+        self.obj_manager.object(obj.id).style(current_style)
+
+        # 카메라 피팅
+        self.camera.fit()
+        self.render()
+
+        print(f"[VtkWidgetBase] Loaded OpenFOAM mesh: {case_name}")
+        print(f"  Points: {surface.GetNumberOfPoints()}")
+        print(f"  Cells: {surface.GetNumberOfCells()}")
+
+        return True
+
+    def _on_select_all(self):
+        """전체 선택"""
+        all_ids = [obj.id for obj in self.obj_manager.get_all()]
+        self.obj_manager.select_multiple(all_ids)
+
+    def _on_clear_selection(self):
+        """선택 해제"""
+        self.obj_manager.clear_selection()
+
     def _on_selection_changed(self, info: dict):
         """선택 변경 이벤트"""
         self.selection_changed.emit(info)
@@ -297,11 +410,218 @@ class VtkWidgetBase(QWidget):
 
         self.render()
 
+    # ===== 선택적 도구 관리 =====
+
+    def add_tool(self, tool_name: str, icon_on: str = None, icon_off: str = None) -> bool:
+        """선택적 도구를 툴바에 추가
+
+        Args:
+            tool_name: 도구 이름 ("point_probe" 등)
+            icon_on: 활성화 아이콘 파일명 (선택)
+            icon_off: 비활성화 아이콘 파일명 (선택)
+
+        Returns:
+            성공 여부
+
+        사용 예시:
+            widget.add_tool("point_probe")
+            widget.add_tool("point_probe", "probe_on.png", "probe_off.png")
+        """
+        if tool_name in self._optional_tools:
+            return False  # 이미 추가됨
+
+        tool = None
+
+        if tool_name == "point_probe":
+            tool = PointProbeTool(self)
+            icon_on = icon_on or "probe_on.png"
+            icon_off = icon_off or "probe_off.png"
+            tooltip = "Point Probe"
+        else:
+            print(f"[VtkWidgetBase] Unknown tool: {tool_name}")
+            return False
+
+        self._optional_tools[tool_name] = tool
+
+        # 툴바에 토글 액션 추가
+        action = self._add_toggle_action(
+            tooltip, icon_on, icon_off,
+            lambda checked, name=tool_name: self._on_optional_tool_toggled(name, checked),
+            checked=False
+        )
+        self._optional_tool_actions[tool_name] = action
+
+        return True
+
+    def remove_tool(self, tool_name: str) -> bool:
+        """선택적 도구 제거
+
+        Args:
+            tool_name: 도구 이름
+
+        Returns:
+            성공 여부
+        """
+        if tool_name not in self._optional_tools:
+            return False
+
+        tool = self._optional_tools.pop(tool_name)
+
+        # 도구 정리
+        if hasattr(tool, 'cleanup'):
+            tool.cleanup()
+        elif hasattr(tool, 'hide'):
+            tool.hide()
+
+        # 툴바에서 액션 제거
+        if tool_name in self._optional_tool_actions:
+            action = self._optional_tool_actions.pop(tool_name)
+            self.toolbar.removeAction(action)
+
+        return True
+
+    def show_tool(self, tool_name: str) -> bool:
+        """도구 표시
+
+        Args:
+            tool_name: 도구 이름
+
+        Returns:
+            성공 여부
+        """
+        if tool_name not in self._optional_tools:
+            return False
+
+        tool = self._optional_tools[tool_name]
+        if hasattr(tool, 'show'):
+            tool.show()
+
+        # 툴바 액션 상태 업데이트
+        if tool_name in self._optional_tool_actions:
+            self._optional_tool_actions[tool_name].setChecked(True)
+
+        return True
+
+    def hide_tool(self, tool_name: str) -> bool:
+        """도구 숨김
+
+        Args:
+            tool_name: 도구 이름
+
+        Returns:
+            성공 여부
+        """
+        if tool_name not in self._optional_tools:
+            return False
+
+        tool = self._optional_tools[tool_name]
+        if hasattr(tool, 'hide'):
+            tool.hide()
+
+        # 툴바 액션 상태 업데이트
+        if tool_name in self._optional_tool_actions:
+            self._optional_tool_actions[tool_name].setChecked(False)
+
+        return True
+
+    def toggle_tool(self, tool_name: str) -> bool:
+        """도구 토글
+
+        Args:
+            tool_name: 도구 이름
+
+        Returns:
+            성공 여부
+        """
+        if tool_name not in self._optional_tools:
+            return False
+
+        tool = self._optional_tools[tool_name]
+        if hasattr(tool, 'toggle'):
+            tool.toggle()
+
+            # 툴바 액션 상태 업데이트
+            if tool_name in self._optional_tool_actions:
+                is_visible = getattr(tool, 'is_visible', False)
+                self._optional_tool_actions[tool_name].setChecked(is_visible)
+
+        return True
+
+    def get_tool(self, tool_name: str) -> Optional[object]:
+        """도구 객체 반환
+
+        Args:
+            tool_name: 도구 이름
+
+        Returns:
+            도구 객체 또는 None
+
+        사용 예시:
+            probe = widget.get_tool("point_probe")
+            if probe:
+                probe.center_moved.connect(my_handler)
+        """
+        return self._optional_tools.get(tool_name)
+
+    def is_tool_visible(self, tool_name: str) -> bool:
+        """도구 가시성 확인"""
+        tool = self._optional_tools.get(tool_name)
+        if tool and hasattr(tool, 'is_visible'):
+            return tool.is_visible
+        return False
+
+    def has_tool(self, tool_name: str) -> bool:
+        """도구 존재 여부 확인"""
+        return tool_name in self._optional_tools
+
+    def list_tools(self) -> List[str]:
+        """추가된 도구 목록 반환"""
+        return list(self._optional_tools.keys())
+
+    def show_tool_button(self, tool_name: str) -> bool:
+        """툴바에서 도구 버튼 표시
+
+        Args:
+            tool_name: 도구 이름
+
+        Returns:
+            성공 여부
+        """
+        if tool_name in self._optional_tool_actions:
+            self._optional_tool_actions[tool_name].setVisible(True)
+            return True
+        return False
+
+    def hide_tool_button(self, tool_name: str) -> bool:
+        """툴바에서 도구 버튼 숨김 (도구 자체는 유지)
+
+        Args:
+            tool_name: 도구 이름
+
+        Returns:
+            성공 여부
+        """
+        if tool_name in self._optional_tool_actions:
+            self._optional_tool_actions[tool_name].setVisible(False)
+            return True
+        return False
+
+    def _on_optional_tool_toggled(self, tool_name: str, checked: bool):
+        """선택적 도구 토글 핸들러"""
+        if checked:
+            self.show_tool(tool_name)
+        else:
+            self.hide_tool(tool_name)
+
     # ===== 정리 =====
 
     def cleanup(self):
         """리소스 정리"""
         try:
+            # 선택적 도구 정리
+            for tool_name in list(self._optional_tools.keys()):
+                self.remove_tool(tool_name)
+
             if self.interactor:
                 self.interactor.Disable()
                 self.interactor.TerminateApp()

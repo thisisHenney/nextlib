@@ -11,7 +11,7 @@ from functools import partial
 from pathlib import Path
 from typing import Optional, Union, Dict, List
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QToolBar, QComboBox, QFileDialog
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QToolBar, QComboBox
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtCore import Signal
 
@@ -24,7 +24,7 @@ import vtk
 vtk.vtkObject.GlobalWarningDisplayOff()
 
 from nextlib.vtk.camera import Camera
-from nextlib.vtk.core import ObjectManager, ObjectAccessor, GroupAccessor, OpenFOAMReader
+from nextlib.vtk.core import ObjectManager, ObjectAccessor, GroupAccessor
 from nextlib.vtk.core.scene_state import SceneState
 from nextlib.vtk.tool import AxesTool, RulerTool, PointProbeTool
 
@@ -166,11 +166,6 @@ class VtkWidgetBase(QWidget):
 
         self.toolbar.addSeparator()
 
-        # ===== 파일 로딩 =====
-        self._add_action("Load OpenFOAM", "openfoam.png", self._on_load_openfoam)
-
-        self.toolbar.addSeparator()
-
         # ===== 뷰 스타일 =====
         self._view_combo = QComboBox()
         self._view_combo.addItems([
@@ -248,82 +243,6 @@ class VtkWidgetBase(QWidget):
     def _on_view_style_changed(self, style: str):
         """뷰 스타일 변경"""
         self.obj_manager.all().style(style)
-
-    def _on_load_openfoam(self):
-        """OpenFOAM mesh 로딩"""
-        # 먼저 .foam 파일 선택 시도
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Load OpenFOAM Case",
-            "",
-            "OpenFOAM Files (*.foam *.OpenFOAM);;All Files (*)"
-        )
-
-        if file_path:
-            self.load_openfoam_mesh(file_path)
-            return
-
-        # 파일 선택 취소 시 폴더 선택
-        folder_path = QFileDialog.getExistingDirectory(
-            self,
-            "Select OpenFOAM Case Folder",
-            ""
-        )
-
-        if folder_path:
-            self.load_openfoam_mesh(folder_path)
-
-    def load_openfoam_mesh(self, case_path: str) -> bool:
-        """OpenFOAM mesh를 로드하여 표시
-
-        Args:
-            case_path: .foam 파일 또는 케이스 폴더 경로
-
-        Returns:
-            성공 여부
-        """
-        if not OpenFOAMReader.is_available():
-            print("[VtkWidgetBase] OpenFOAM reader not available")
-            return False
-
-        reader = OpenFOAMReader()
-        if not reader.load(case_path):
-            return False
-
-        # Surface mesh 가져오기
-        surface = reader.get_surface()
-        if surface is None or surface.GetNumberOfPoints() == 0:
-            print("[VtkWidgetBase] No mesh data found")
-            return False
-
-        # 케이스 이름 추출
-        case_name = Path(case_path).stem
-        if Path(case_path).is_dir():
-            case_name = Path(case_path).name
-
-        # ObjectManager에 추가
-        from nextlib.vtk.core import ObjectData
-        obj = ObjectData(
-            polydata=surface,
-            name=f"OpenFOAM_{case_name}",
-            color=(0.8, 0.8, 0.8),
-            group="openfoam_mesh"
-        )
-        self.obj_manager.add(obj)
-
-        # 뷰 스타일 적용
-        current_style = self._view_combo.currentText()
-        self.obj_manager.object(obj.id).style(current_style)
-
-        # 카메라 피팅
-        self.camera.fit()
-        self.render()
-
-        print(f"[VtkWidgetBase] Loaded OpenFOAM mesh: {case_name}")
-        print(f"  Points: {surface.GetNumberOfPoints()}")
-        print(f"  Cells: {surface.GetNumberOfCells()}")
-
-        return True
 
     def _on_select_all(self):
         """전체 선택"""

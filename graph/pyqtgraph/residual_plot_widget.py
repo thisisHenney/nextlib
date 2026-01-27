@@ -1,16 +1,32 @@
 import re
 from pathlib import Path
-from PySide6.QtWidgets import QWidget, QVBoxLayout
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QToolBar
+from PySide6.QtGui import QAction
+from PySide6.QtCore import Signal
 import pyqtgraph as pg
 
 
 class ResidualPlotWidget(QWidget):
+    # Signal emitted when refresh button is clicked
+    refresh_requested = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
 
         self.data = None
+        self._current_log_path = None
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Toolbar
+        self.toolbar = QToolBar(self)
+        self._refresh_action = QAction("Refresh", self)
+        self._refresh_action.setToolTip("Reload residual log file")
+        self._refresh_action.triggered.connect(self._on_refresh)
+        self.toolbar.addAction(self._refresh_action)
+        layout.addWidget(self.toolbar)
 
         # 그래프 위젯 생성 (초기에는 빈 화면)
         self.plot_widget = pg.PlotWidget(background='w')
@@ -38,8 +54,20 @@ class ResidualPlotWidget(QWidget):
     def load_file(self, log_path: str):
         if not Path(log_path).is_file():
             return
+        self._current_log_path = log_path
         self.data = self.parse_log_file(log_path)
         self.update_plot()
+
+    def reload(self):
+        """Reload the current log file."""
+        if self._current_log_path:
+            self.load_file(self._current_log_path)
+
+    def _on_refresh(self):
+        """Handle refresh button click."""
+        if self._current_log_path:
+            self.reload()
+        self.refresh_requested.emit()
 
     def parse_log_file(self, path: str):
         time_values = []

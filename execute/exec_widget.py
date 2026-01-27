@@ -621,11 +621,14 @@ class ExecWidget(QWidget):
             return False
 
         # State: Starting
+        cpu_id = get_cpu
+        pid = -1  # Will be set after process starts
         self.sig_proc_status.emit(proc_idx, cpu_id, pid, 'Starting')
         _start_state = self._procs[proc_idx].waitForStarted(-1)
         if _start_state:
             # State: Running
-            assign_cpu(self._procs[proc_idx].processId(), get_cpu)
+            pid = self._procs[proc_idx].processId()
+            assign_cpu(pid, get_cpu)
             self.sig_proc_status.emit(proc_idx, cpu_id, pid, 'Running')
             return True
         else:
@@ -647,12 +650,12 @@ class ExecWidget(QWidget):
             self._run_restore_ui()
 
     def _get_message_output(self, proc_idx):
-        _message = bytes(self._procs[proc_idx].readAllStandardOutput()).decode('utf-8')
+        _message = bytes(self._procs[proc_idx].readAllStandardOutput()).decode('utf-8', errors='replace')
         if _message:
             self.add_message_output(_message, proc_idx)
 
     def _get_message_error(self, proc_idx):
-        _message = bytes(self._procs[proc_idx].readAllStandardError()).decode('utf-8')
+        _message = bytes(self._procs[proc_idx].readAllStandardError()).decode('utf-8', errors='replace')
         if _message:
             self.add_message_error(_message, proc_idx)
 
@@ -689,7 +692,7 @@ class ExecWidget(QWidget):
             else:
                 cur_value = (int)(((self._cur_count - 2) / self._total_cmd_num) * 100)
                 self._progressbar.setValue(cur_value)
-                self.sig_proc_status.emit(proc_idx, cpu_id, pid, f'Running-{cur_value}%')
+                # self.sig_proc_status.emit(proc_idx, -1, -1, f'Running-{cur_value}%')
 
         for state in self._procs_state:
             if state != QProcess.ProcessState.NotRunning:
@@ -704,7 +707,7 @@ class ExecWidget(QWidget):
 
             if self._progressbar is not None:
                 self._progressbar.setValue(100)
-                self.sig_proc_status.emit(proc_idx, cpu_id, pid, f'Finished-100%')
+                # self.sig_proc_status.emit(proc_idx, -1, -1, f'Finished-100%')
 
         if self._funcs_restore_ui:
             self._run_restore_ui()
@@ -880,7 +883,7 @@ class ExecWidget(QWidget):
 
         self._pause_all_proc = True
         self.add_log_notice('Paused')
-        self.sig_proc_status.emit(proc_idx, cpu_id, pid, 'Paused')
+        # self.sig_proc_status.emit(0, -1, -1, 'Paused')
 
     def resume_process(self):
         if not self.is_running():
@@ -891,7 +894,7 @@ class ExecWidget(QWidget):
             if state in (QProcess.ProcessState.Starting, QProcess.ProcessState.Running):
                 proc_id = proc.processId()
                 try:
-                    p = psutil.Process(pid)
+                    p = psutil.Process(proc_id)
                     p.resume()
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
@@ -901,4 +904,4 @@ class ExecWidget(QWidget):
 
         self._pause_all_proc = False
         self.add_log_notice('Continue')
-        self.sig_proc_status.emit(proc_idx, cpu_id, pid, 'Continue')
+        # self.sig_proc_status.emit(0, -1, -1, 'Continue')

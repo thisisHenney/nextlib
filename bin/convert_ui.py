@@ -2,6 +2,13 @@ import os
 import sys
 from pathlib import Path
 import subprocess
+
+# Add nextlib parent directory to path
+_current_file = Path(__file__).resolve()
+_nextlib_root = _current_file.parent.parent.parent  # Go up to /home/test/lib
+if str(_nextlib_root) not in sys.path:
+    sys.path.insert(0, str(_nextlib_root))
+
 import PySide6
 from nextlib.utils.file import get_encoding_type
 
@@ -79,8 +86,19 @@ if __name__ == '__main__':
             print(f' [{i + 1}/{totalNum}] Skipping... {source.name:<16} -> Already Up-to-date')
         else:
             print(f' [{i + 1}/{totalNum}] Converting... {source.name:<16} -> {source.stem}_ui.py')
-            uic = Path(PySide6.__file__).parent / "uic.exe"
-            subprocess.run([str(uic), str(source), "-o", str(target)], check=True)
+
+            # Cross-platform uic command
+            if os.name == 'nt':  # Windows
+                uic = Path(PySide6.__file__).parent / "uic.exe"
+                subprocess.run([str(uic), str(source), "-o", str(target)], check=True)
+            else:  # Linux/Mac - use pyside6-uic or python module
+                try:
+                    # Try pyside6-uic command first
+                    subprocess.run(["pyside6-uic", str(source), "-o", str(target)], check=True)
+                except FileNotFoundError:
+                    # Fallback to python module
+                    subprocess.run([sys.executable, "-m", "PySide6.uic", str(source), "-o", str(target)], check=True)
+
             if disable_centralwidget_set:
                 modify_ui_py_file(str(target), disable_centralwidget_set)
 

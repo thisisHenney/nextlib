@@ -2,6 +2,7 @@ import os
 import sys
 from pathlib import Path
 import subprocess
+import PySide6
 from nextlib.utils.file import get_encoding_type
 
 
@@ -78,8 +79,8 @@ if __name__ == '__main__':
             print(f' [{i + 1}/{totalNum}] Skipping... {source.name:<16} -> Already Up-to-date')
         else:
             print(f' [{i + 1}/{totalNum}] Converting... {source.name:<16} -> {source.stem}_ui.py')
-            uic = r"C:\Users\thisi\AppData\Roaming\Python\Python311\Scripts\pyside6-uic.exe"
-            subprocess.run([uic, str(source), '-o', str(target)])
+            uic = Path(PySide6.__file__).parent / "uic.exe"
+            subprocess.run([str(uic), str(source), "-o", str(target)], check=True)
             if disable_centralwidget_set:
                 modify_ui_py_file(str(target), disable_centralwidget_set)
 

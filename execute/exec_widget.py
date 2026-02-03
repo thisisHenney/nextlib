@@ -611,13 +611,12 @@ class ExecWidget(QWidget):
         self._start_time[proc_idx] = time.time()
 
         split_cmd = self._procs[proc_idx].splitCommand(_cmd)
-        firt_cmd = _cmd.split(' ')[0]
         if len(split_cmd) == 1:
-            self._procs[proc_idx].start(firt_cmd)
+            self._procs[proc_idx].start(split_cmd[0])
         elif len(split_cmd) > 1:
-            self._procs[proc_idx].start(firt_cmd, _cmd.split(' ')[1:])
+            self._procs[proc_idx].start(split_cmd[0], split_cmd[1:])
         else:   # Cannot reach this point
-            self._stopped_proc(proc_idx, f'There is no command: {split_cmd[0]}')
+            self._stopped_proc(proc_idx, f'There is no command: {_cmd}')
             return False
 
         # State: Starting
@@ -711,9 +710,10 @@ class ExecWidget(QWidget):
 
         if self._funcs_restore_ui:
             self._run_restore_ui()
-        
-        # 혹시나 향후 확인필요
-        if self._thread_find_cpus[proc_idx] is not None:
+
+        # Only wait for thread if not proceeding to next command
+        # (if is_next is True, a new thread was started in _run_next)
+        if not is_next and self._thread_find_cpus[proc_idx] is not None:
             self._thread_find_cpus[proc_idx].wait()
             self._thread_find_cpus[proc_idx] = None
 

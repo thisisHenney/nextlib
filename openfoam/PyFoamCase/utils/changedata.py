@@ -680,9 +680,9 @@ class ChangeDataUtil(BaseUtil):
             return False
         return False
 
-    # Clear dictionary contents
+    # Clear dictionary or list contents
     def clear(self, route: str):
-        """Clear dictionary contents while keeping the dictionary structure"""
+        """Clear dictionary or list contents while keeping the structure"""
         if self.lines is None or self.root_node is None:
             return False
 
@@ -690,23 +690,61 @@ class ChangeDataUtil(BaseUtil):
         if node is None:
             return False
 
-        # Only clear if it's a dictionary (has block_end_line)
-        if node.block_end_line is None:
-            return False
+        # Handle dictionary (has block_end_line)
+        if node.block_end_line is not None:
+            # Delete all lines between the opening and closing braces
+            start = node.line_start + 2  # Skip key line and opening brace
+            end = node.block_end_line     # Keep closing brace
 
-        # Delete all lines between the opening and closing braces
-        start = node.line_start + 2  # Skip key line and opening brace
-        end = node.block_end_line     # Keep closing brace
+            if start < end:
+                del self.lines[start:end]
 
-        if start < end:
-            del self.lines[start:end]
+            # Clear children nodes
+            node.children = []
 
-        # Clear children nodes
-        node.children = []
+            self._rebuild_node()
+            self._invalidate_cache()
+            return True
 
-        self._rebuild_node()
-        self._invalidate_cache()
-        return True
+        # Handle list (value is a list)
+        if isinstance(node.value, list):
+            # Find the line with opening parenthesis
+            start = node.line_start
+            i = start
+            while i < len(self.lines) and "(" not in self.lines[i]:
+                i += 1
+            if i >= len(self.lines):
+                return False
+
+            list_start = i
+
+            # Find the line with closing parenthesis
+            list_end = None
+            depth = 0
+            for j in range(list_start, len(self.lines)):
+                depth += self.lines[j].count("(")
+                depth -= self.lines[j].count(")")
+                if depth == 0 and ")" in self.lines[j]:
+                    list_end = j
+                    break
+
+            if list_end is None:
+                return False
+
+            # Delete all lines between parentheses
+            if list_start + 1 < list_end:
+                del self.lines[list_start + 1:list_end]
+
+            # Update node value
+            node.value = []
+            if hasattr(node, 'children'):
+                node.children = []
+
+            self._rebuild_node()
+            self._invalidate_cache()
+            return True
+
+        return False
 
     def _normalize_after_remove(self, start=None, end=None):
         if start is not None and end is not None:

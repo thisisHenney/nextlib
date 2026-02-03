@@ -93,9 +93,9 @@ class FoamUtils:
     def remove(self, route):
         return self.changedatautil.remove(route)
 
-    # Clear dictionary contents
+    # Clear dictionary or list contents
     def clear(self, route):
-        """Clear dictionary contents while keeping the dictionary structure"""
+        """Clear dictionary or list contents while keeping the structure"""
         return self.changedatautil.clear(route)
 
     # Insert

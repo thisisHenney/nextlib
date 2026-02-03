@@ -93,6 +93,11 @@ class FoamUtils:
     def remove(self, route):
         return self.changedatautil.remove(route)
 
+    # Clear dictionary contents
+    def clear(self, route):
+        """Clear dictionary contents while keeping the dictionary structure"""
+        return self.changedatautil.clear(route)
+
     # Insert
     def insert_value(self, route: str, value,
                      show_type="auto",

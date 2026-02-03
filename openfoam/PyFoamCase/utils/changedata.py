@@ -680,6 +680,34 @@ class ChangeDataUtil(BaseUtil):
             return False
         return False
 
+    # Clear dictionary contents
+    def clear(self, route: str):
+        """Clear dictionary contents while keeping the dictionary structure"""
+        if self.lines is None or self.root_node is None:
+            return False
+
+        node = self._find_node(self.root_node, route)
+        if node is None:
+            return False
+
+        # Only clear if it's a dictionary (has block_end_line)
+        if node.block_end_line is None:
+            return False
+
+        # Delete all lines between the opening and closing braces
+        start = node.line_start + 2  # Skip key line and opening brace
+        end = node.block_end_line     # Keep closing brace
+
+        if start < end:
+            del self.lines[start:end]
+
+        # Clear children nodes
+        node.children = []
+
+        self._rebuild_node()
+        self._invalidate_cache()
+        return True
+
     def _normalize_after_remove(self, start=None, end=None):
         if start is not None and end is not None:
             self._cleanup_inner_blank_lines(start, end)

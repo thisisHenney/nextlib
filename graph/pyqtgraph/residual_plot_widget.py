@@ -1,6 +1,6 @@
 import re
 from pathlib import Path
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QToolBar
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QToolBar, QFrame
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Signal
 import pyqtgraph as pg
@@ -17,8 +17,8 @@ class ResidualPlotWidget(QWidget):
         self._current_log_path = None
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(4)
 
         # Toolbar
         self.toolbar = QToolBar(self)
@@ -28,9 +28,22 @@ class ResidualPlotWidget(QWidget):
         self.toolbar.addAction(self._refresh_action)
         layout.addWidget(self.toolbar)
 
+        # 그래프 위젯을 감싸는 프레임 (Styled Panel)
+        self.plot_frame = QFrame(self)
+        self.plot_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        self.plot_frame.setFrameShadow(QFrame.Shadow.Sunken)
+        self.plot_frame.setLineWidth(1)
+
+        # 프레임 내부 레이아웃
+        frame_layout = QVBoxLayout(self.plot_frame)
+        frame_layout.setContentsMargins(1, 1, 1, 1)
+        frame_layout.setSpacing(0)
+
         # 그래프 위젯 생성 (초기에는 빈 화면)
         self.plot_widget = pg.PlotWidget(background='w')
-        layout.addWidget(self.plot_widget)
+        frame_layout.addWidget(self.plot_widget)
+
+        layout.addWidget(self.plot_frame, stretch=1)
 
         # y축 로그 스케일
         self.plot_widget.setLogMode(y=True)

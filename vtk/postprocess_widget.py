@@ -6,7 +6,7 @@ from functools import partial
 from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QToolBar, QComboBox,
-    QFileDialog, QLabel, QSlider, QCheckBox, QMessageBox, QLineEdit
+    QFileDialog, QLabel, QSlider, QCheckBox, QMessageBox, QLineEdit, QFrame
 )
 from PySide6.QtGui import QAction, QIcon, QDoubleValidator
 from PySide6.QtCore import Signal, Qt
@@ -76,16 +76,29 @@ class PostprocessWidget(QWidget):
     def _setup_ui(self):
         """UI 레이아웃 설정"""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(4)
 
         self.toolbar = QToolBar("Postprocess Toolbar", self)
         self.toolbar.setFloatable(True)
         self.toolbar.setMovable(True)
         layout.addWidget(self.toolbar)
 
-        self.vtk_widget = QVTKRenderWindowInteractor(self)
-        layout.addWidget(self.vtk_widget, stretch=1)
+        # VTK 위젯을 감싸는 프레임 (Styled Panel)
+        self.vtk_frame = QFrame(self)
+        self.vtk_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        self.vtk_frame.setFrameShadow(QFrame.Shadow.Sunken)
+        self.vtk_frame.setLineWidth(1)
+
+        # 프레임 내부 레이아웃
+        frame_layout = QVBoxLayout(self.vtk_frame)
+        frame_layout.setContentsMargins(1, 1, 1, 1)
+        frame_layout.setSpacing(0)
+
+        self.vtk_widget = QVTKRenderWindowInteractor(self.vtk_frame)
+        frame_layout.addWidget(self.vtk_widget, stretch=1)
+
+        layout.addWidget(self.vtk_frame, stretch=1)
 
     def _setup_vtk(self):
         """VTK 렌더러 및 인터랙터 설정"""
@@ -277,8 +290,6 @@ class PostprocessWidget(QWidget):
             )
             return
 
-        print(f"[PostprocessWidget] Loading: {file_path}")
-
         # OpenFOAMReader로 로드
         self.foam_reader = OpenFOAMReader()
         if not self.foam_reader.load(file_path):
@@ -304,8 +315,6 @@ class PostprocessWidget(QWidget):
             self.bounds = bounds
         else:
             self.bounds = (0, 1, 0, 1, 0, 1)
-        print(f"[PostprocessWidget] Bounds: X({self.bounds[0]:.3f}~{self.bounds[1]:.3f}), "
-              f"Y({self.bounds[2]:.3f}~{self.bounds[3]:.3f}), Z({self.bounds[4]:.3f}~{self.bounds[5]:.3f})")
 
         # 현재 축에 맞는 범위 설정
         self._update_axis_range()
@@ -356,7 +365,6 @@ class PostprocessWidget(QWidget):
 
             it.GoToNextItem()
 
-        print(f"[PostprocessWidget] Fields: {sorted(fields)}")
         return sorted(fields)
 
     def _compute_z_bounds(self):
@@ -385,8 +393,6 @@ class PostprocessWidget(QWidget):
             self.zmax = max(zmaxs)
         else:
             self.zmin, self.zmax = 0.0, 1.0
-
-        print(f"[PostprocessWidget] Z-range: {self.zmin} ~ {self.zmax}")
 
     # ===== 필드 시각화 =====
 
@@ -437,7 +443,6 @@ class PostprocessWidget(QWidget):
             it.GoToNextItem()
 
         if found_datasets == 0:
-            print(f"[PostprocessWidget] No dataset contains field '{field}'")
             self.renderer.RemoveAllViewProps()
             self._remove_scalar_bar()
             self._render()
@@ -792,8 +797,8 @@ class PostprocessWidget(QWidget):
                 rw.SetWindowInfo("")
             self.vtk_widget = None
 
-        except Exception as e:
-            print(f"[PostprocessWidget] Cleanup error: {e}")
+        except Exception:
+            pass
 
     def closeEvent(self, event):
         """닫기 이벤트"""

@@ -708,8 +708,10 @@ class ExecWidget(QWidget):
                 self._progressbar.setValue(100)
                 # self.sig_proc_status.emit(proc_idx, -1, -1, f'Finished-100%')
 
-        if self._funcs_restore_ui:
-            self._run_restore_ui()
+        # Restore UI after all commands finished or stopped with error
+        if not is_next:
+            if self._funcs_restore_ui:
+                self._run_restore_ui()
 
         # Only wait for thread if not proceeding to next command
         # (if is_next is True, a new thread was started in _run_next)

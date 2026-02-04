@@ -179,6 +179,7 @@ class ObjectManager(QObject):
         prop = actor.GetProperty()
         prop.SetRepresentationToSurface()
         prop.EdgeVisibilityOn()
+        prop.SetEdgeColor(0.25, 0.25, 0.45)  # 파라뷰 스타일 보라색 엣지
 
         self.renderer.AddActor(actor)
 
@@ -274,6 +275,41 @@ class ObjectManager(QObject):
         """선택 해제"""
         self._selected_ids.clear()
         self._update_selection_visual()
+
+    def fade_all(self):
+        """모든 객체를 선택되지 않은 상태(반투명)로 표시
+
+        트리에서 선택이 있지만 VTK 객체와 매칭되지 않을 때 사용
+        """
+        # 기존 아웃라인/bbox 제거
+        for actor in list(self._outline_actors.values()):
+            try:
+                self.renderer.RemoveActor(actor)
+            except:
+                pass
+        self._outline_actors.clear()
+
+        if self._bbox_actor:
+            try:
+                self.renderer.RemoveActor(self._bbox_actor)
+            except:
+                pass
+            self._bbox_actor = None
+
+        # 모든 객체를 반투명하게
+        for obj in self._objects.values():
+            if obj.removed:
+                continue
+
+            prop = obj.actor.GetProperty()
+            norm_color = tuple(c / 255.0 for c in obj.color)
+
+            prop.SetOpacity(0.25)
+            prop.SetEdgeColor(0.6, 0.6, 0.7)  # 연한 보라색 엣지
+            faded_color = tuple(min(1.0, c * 0.3 + 0.7) for c in norm_color)
+            prop.SetColor(faded_color)
+
+        self._render()
 
     def get_selected_ids(self) -> List[int]:
         """선택된 ID 목록"""
@@ -427,23 +463,38 @@ class ObjectManager(QObject):
                     continue
 
                 prop = obj.actor.GetProperty()
+                # RGB 0-255를 0-1로 변환
+                norm_color = tuple(c / 255.0 for c in obj.color)
+
                 if obj.id in self._selected_ids:
+                    # 선택된 객체: 원래 상태로 복원
                     prop.SetOpacity(1.0)
+                    prop.SetEdgeColor(0.25, 0.25, 0.45)  # 파라뷰 스타일 보라색 엣지
+                    prop.SetColor(norm_color)  # 원래 색상
                     # 개별 outline 표시 옵션이 켜져 있을 때만 추가
                     if self._show_individual_outlines:
                         self._add_outline(obj)
                 else:
+                    # 선택되지 않은 객체: 투명하고 연한 엣지
                     prop.SetOpacity(0.25)
+                    prop.SetEdgeColor(0.6, 0.6, 0.7)  # 연한 보라색 엣지
+                    # 면 색상도 연하게 (원래 색상과 흰색 혼합)
+                    faded_color = tuple(min(1.0, c * 0.3 + 0.7) for c in norm_color)
+                    prop.SetColor(faded_color)
 
             # 선택된 객체들의 bbox 표시
             self._add_selection_bbox()
         else:
-            # 선택이 없으면 모든 객체 원래 투명도로 복원
+            # 선택이 없으면 모든 객체 원래 상태로 복원
             for obj in self._objects.values():
                 if obj.removed:
                     continue
                 prop = obj.actor.GetProperty()
                 prop.SetOpacity(obj.opacity)
+                prop.SetEdgeColor(0.25, 0.25, 0.45)  # 파라뷰 스타일 보라색 엣지
+                # RGB 0-255를 0-1로 변환
+                norm_color = tuple(c / 255.0 for c in obj.color)
+                prop.SetColor(norm_color)  # 원래 색상
 
         # 시그널 발신
         info = {
@@ -523,16 +574,11 @@ class ObjectManager(QObject):
             except:
                 continue
 
-        # 유효한 bounds인지 확인
-        if min_x >= max_x or min_y >= max_y or min_z >= max_z:
+        # 유효한 bounds인지 확인 (inf 값이 남아있으면 선택된 객체 없음)
+        if min_x == float("inf") or max_x == float("-inf"):
             return
 
-        # 최소 크기 보장
-        for vals in [(min_x, max_x), (min_y, max_y), (min_z, max_z)]:
-            if vals[1] - vals[0] < 1e-6:
-                mid = (vals[0] + vals[1]) / 2
-                vals = (mid - 0.01, mid + 0.01)
-
+        # 평면 객체는 바운딩 박스도 평면 유지 (부피를 늘리지 않음)
         cube = vtkCubeSource()
         cube.SetBounds(min_x, max_x, min_y, max_y, min_z, max_z)
         cube.Update()

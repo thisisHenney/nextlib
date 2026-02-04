@@ -106,8 +106,6 @@ class OpenFOAMReader:
         elif path.is_dir():
             # OpenFOAM 케이스 폴더인지 검증
             if not self.is_openfoam_case(path):
-                print(f"[OpenFOAMReader] Not a valid OpenFOAM case: {path}")
-                print("  Expected: constant/polyMesh folder or system folder")
                 return False
 
             self._case_path = path
@@ -120,21 +118,14 @@ class OpenFOAMReader:
                 self._foam_file = path / "case.foam"
                 try:
                     self._foam_file.touch()
-                    print(f"[OpenFOAMReader] Created: {self._foam_file}")
-                except Exception as e:
-                    print(f"[OpenFOAMReader] Cannot create .foam file: {e}")
+                except Exception:
                     return False
         else:
-            print(f"[OpenFOAMReader] Invalid path: {path}")
             return False
 
         # vtkOpenFOAMReader 가져오기
         ReaderClass = _get_openfoam_reader()
         if ReaderClass is None:
-            print("[OpenFOAMReader] vtkOpenFOAMReader not available")
-            print("  Install VTK with OpenFOAM support:")
-            print("    pip install vtk")
-            print("    or conda install -c conda-forge vtk")
             return False
 
         try:
@@ -177,14 +168,9 @@ class OpenFOAMReader:
             # Surface polydata 생성
             self._create_surface()
 
-            print(f"[OpenFOAMReader] Loaded: {self._case_path}")
-            print(f"[OpenFOAMReader] Time steps: {len(self._time_values)}")
-            print(f"[OpenFOAMReader] Fields: {self._field_names}")
-
             return True
 
-        except Exception as e:
-            print(f"[OpenFOAMReader] Error loading case: {e}")
+        except Exception:
             return False
 
     def _extract_time_values(self):

@@ -11,7 +11,7 @@ from functools import partial
 from pathlib import Path
 from typing import Optional, Union, Dict, List
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QToolBar, QComboBox, QFrame
+from PySide6.QtWidgets import QWidget, QMainWindow, QVBoxLayout, QToolBar, QComboBox, QFrame
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtCore import Signal
 
@@ -34,8 +34,8 @@ RES_DIR = Path(__file__).resolve().parent
 ICON_DIR = RES_DIR / "res" / "icon"
 
 
-class VtkWidgetBase(QWidget):
-    """VTK 위젯 베이스 클래스"""
+class VtkWidgetBase(QMainWindow):
+    """VTK 위젯 베이스 클래스 (QMainWindow 기반 - QToolBar 플로팅/도킹 지원)"""
 
     # 시그널
     selection_changed = Signal(dict)
@@ -76,18 +76,14 @@ class VtkWidgetBase(QWidget):
     # ===== 초기화 =====
 
     def _setup_ui(self):
-        """UI 레이아웃 설정"""
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(4)
-
-        # 툴바
+        """UI 레이아웃 설정 (QMainWindow 기반)"""
+        # 툴바 (QMainWindow 툴바 영역에 추가 - 플로팅/도킹 지원)
         self.toolbar = QToolBar("VTK Toolbar", self)
         self.toolbar.setFloatable(True)
         self.toolbar.setMovable(True)
-        layout.addWidget(self.toolbar)
+        self.addToolBar(self.toolbar)
 
-        # VTK 위젯을 감싸는 프레임 (Styled Panel)
+        # VTK 위젯을 감싸는 프레임 (Styled Panel) - 중앙 위젯으로 설정
         self.vtk_frame = QFrame(self)
         self.vtk_frame.setFrameShape(QFrame.Shape.StyledPanel)
         self.vtk_frame.setFrameShadow(QFrame.Shadow.Sunken)
@@ -102,7 +98,7 @@ class VtkWidgetBase(QWidget):
         self.vtk_widget = QVTKRenderWindowInteractor(self.vtk_frame)
         frame_layout.addWidget(self.vtk_widget, stretch=1)
 
-        layout.addWidget(self.vtk_frame, stretch=1)
+        self.setCentralWidget(self.vtk_frame)
 
     def _setup_vtk(self):
         """VTK 렌더러 및 인터랙터 설정"""
@@ -205,8 +201,8 @@ class VtkWidgetBase(QWidget):
 
     def _set_background(self):
         """배경색 설정 - ParaView 스타일 그라데이션"""
-        self.renderer.SetBackground(0.32, 0.34, 0.43)   # 하단 (어두운 청회색)
-        self.renderer.SetBackground2(0.82, 0.87, 0.97)  # 상단 (밝은 회청색)
+        self.renderer.SetBackground(0.15, 0.15, 0.18)   # 하단 (어두운 회색)
+        self.renderer.SetBackground2(0.25, 0.27, 0.33)  # 상단 (짙은 청회색)
         self.renderer.GradientBackgroundOn()
 
     # ===== 툴바 헬퍼 =====

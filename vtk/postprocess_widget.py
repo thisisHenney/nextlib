@@ -5,7 +5,7 @@ OpenFOAM 케이스 파일을 불러와 필드 데이터를 시각화하는 기�
 from functools import partial
 from pathlib import Path
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QToolBar, QComboBox,
+    QMainWindow, QVBoxLayout, QToolBar, QComboBox,
     QFileDialog, QLabel, QSlider, QCheckBox, QMessageBox, QLineEdit, QFrame
 )
 from PySide6.QtGui import QAction, QIcon, QDoubleValidator
@@ -30,9 +30,9 @@ RES_DIR = Path(__file__).resolve().parent
 ICON_DIR = RES_DIR / "res" / "icon"
 
 
-class PostprocessWidget(QWidget):
+class PostprocessWidget(QMainWindow):
     """
-    후처리용 VTK 위젯
+    후처리용 VTK 위젯 (QMainWindow 기반 - QToolBar 플로팅/도킹 지원)
     - OpenFOAM 케이스 파일 로딩
     - 필드 데이터 시각화
     - 슬라이스 뷰
@@ -50,6 +50,7 @@ class PostprocessWidget(QWidget):
         # OpenFOAM reader
         self.reader = None
         self.field_names: list = []
+        self._case_path: str = ""
 
         # Slice control
         self.slice_enabled = False
@@ -62,7 +63,8 @@ class PostprocessWidget(QWidget):
 
         # Scalar bar
         self.scalar_bar_actor = None
-        self.scalar_bar_visible = False
+        self.scalar_bar_widget = None
+        self.scalar_bar_visible = True
 
         self._setup_ui()
         self._setup_vtk()
@@ -74,15 +76,12 @@ class PostprocessWidget(QWidget):
         self.interactor.Initialize()
 
     def _setup_ui(self):
-        """UI 레이아웃 설정"""
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(4)
-
+        """UI 레이아웃 설정 (QMainWindow 기반)"""
+        # 툴바 (QMainWindow 툴바 영역에 추가 - 플로팅/도킹 지원)
         self.toolbar = QToolBar("Postprocess Toolbar", self)
         self.toolbar.setFloatable(True)
         self.toolbar.setMovable(True)
-        layout.addWidget(self.toolbar)
+        self.addToolBar(self.toolbar)
 
         # VTK 위젯을 감싸는 프레임 (Styled Panel)
         self.vtk_frame = QFrame(self)
@@ -98,7 +97,7 @@ class PostprocessWidget(QWidget):
         self.vtk_widget = QVTKRenderWindowInteractor(self.vtk_frame)
         frame_layout.addWidget(self.vtk_widget, stretch=1)
 
-        layout.addWidget(self.vtk_frame, stretch=1)
+        self.setCentralWidget(self.vtk_frame)
 
     def _setup_vtk(self):
         """VTK 렌더러 및 인터랙터 설정"""
@@ -117,7 +116,7 @@ class PostprocessWidget(QWidget):
     def _build_toolbar(self):
         """툴바 구성"""
         # 파일 로드
-        self._add_action("Load .foam", "open.png", self.load_foam_file)
+        self._add_action("Refresh", "open.png", lambda: self.load_foam_file())
         self.toolbar.addSeparator()
 
         # Home
@@ -152,27 +151,29 @@ class PostprocessWidget(QWidget):
         # 스칼라 바 토글
         self._scalar_bar_action = self._add_toggle_action(
             "Scalar Bar", "scalar_bar_off.png", "scalar_bar_on.png",
-            self._on_scalar_bar_toggled, checked=False
+            self._on_scalar_bar_toggled, checked=True
         )
 
     def _build_control_panel(self):
-        """필드 선택 및 슬라이스 컨트롤 패널"""
-        ctrl_layout = QHBoxLayout()
+        """필드 선택 및 슬라이스 컨트롤 툴바 (하단 영역)"""
+        ctrl_toolbar = QToolBar("Controls", self)
+        ctrl_toolbar.setFloatable(True)
+        ctrl_toolbar.setMovable(True)
 
         # 필드 선택
-        ctrl_layout.addWidget(QLabel("Field:"))
+        ctrl_toolbar.addWidget(QLabel("Field:"))
         self.field_combo = QComboBox()
         self.field_combo.setMinimumWidth(120)
         self.field_combo.currentIndexChanged.connect(self._on_field_changed)
-        ctrl_layout.addWidget(self.field_combo)
+        ctrl_toolbar.addWidget(self.field_combo)
 
-        ctrl_layout.addStretch()
+        ctrl_toolbar.addSeparator()
 
         # 슬라이스 모드 체크박스
         self.slice_check = QCheckBox("Slice")
         self.slice_check.setChecked(False)
         self.slice_check.toggled.connect(self._on_slice_toggled)
-        ctrl_layout.addWidget(self.slice_check)
+        ctrl_toolbar.addWidget(self.slice_check)
 
         # 슬라이스 축 선택
         self.axis_combo = QComboBox()
@@ -180,11 +181,11 @@ class PostprocessWidget(QWidget):
         self.axis_combo.setCurrentText("Z")
         self.axis_combo.currentTextChanged.connect(self._on_axis_changed)
         self.axis_combo.setEnabled(False)
-        ctrl_layout.addWidget(self.axis_combo)
+        ctrl_toolbar.addWidget(self.axis_combo)
 
         # 슬라이스 위치 라벨
         self.axis_label = QLabel("Z:")
-        ctrl_layout.addWidget(self.axis_label)
+        ctrl_toolbar.addWidget(self.axis_label)
 
         # 슬라이스 위치 슬라이더
         self.pos_slider = QSlider(Qt.Horizontal)
@@ -192,7 +193,7 @@ class PostprocessWidget(QWidget):
         self.pos_slider.setMinimumWidth(200)
         self.pos_slider.valueChanged.connect(self._on_slider_changed)
         self.pos_slider.setEnabled(False)
-        ctrl_layout.addWidget(self.pos_slider)
+        ctrl_toolbar.addWidget(self.pos_slider)
 
         # 슬라이스 위치 직접 입력
         self.pos_edit = QLineEdit("0.0")
@@ -200,10 +201,9 @@ class PostprocessWidget(QWidget):
         self.pos_edit.setValidator(QDoubleValidator())
         self.pos_edit.editingFinished.connect(self._on_pos_edit_finished)
         self.pos_edit.setEnabled(False)
-        ctrl_layout.addWidget(self.pos_edit)
+        ctrl_toolbar.addWidget(self.pos_edit)
 
-        # 메인 레이아웃에 추가
-        self.layout().addLayout(ctrl_layout)
+        self.addToolBar(Qt.BottomToolBarArea, ctrl_toolbar)
 
     def _add_action(self, name: str, icon_name: str, slot):
         """툴바 액션 추가"""
@@ -233,26 +233,32 @@ class PostprocessWidget(QWidget):
 
     def _set_background(self):
         """배경 설정"""
-        self.renderer.SetBackground2(0.40, 0.40, 0.50)
-        self.renderer.SetBackground(0.65, 0.65, 0.70)
+        self.renderer.SetBackground2(0.25, 0.27, 0.33)
+        self.renderer.SetBackground(0.15, 0.15, 0.18)
         self.renderer.GradientBackgroundOn()
 
     # ===== 파일 로딩 =====
 
-    def load_foam_file(self):
-        """OpenFOAM 케이스 파일 또는 폴더 로드 다이얼로그"""
-        # 먼저 .foam 파일 선택 시도
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select .foam File (or Cancel to select folder)",
-            "",
-            "OpenFOAM Case (*.foam *.OpenFOAM);;All Files (*.*)"
-        )
-        if file_path:
-            self.load_foam(file_path)
+    def set_case_path(self, case_path: str):
+        """케이스 폴더 경로 등록 (Refresh 버튼에서 사용)"""
+        self._case_path = case_path
+
+    def load_foam_file(self, case_path: str = ""):
+        """OpenFOAM 케이스 폴더 로드
+
+        Args:
+            case_path: 케이스 폴더 경로. 비어있으면 등록된 경로로 새로고침,
+                       등록된 경로도 없으면 폴더 선택 다이얼로그 표시.
+        """
+        if case_path:
+            self.load_foam(case_path)
             return
 
-        # 파일 선택 취소 시 폴더 선택
+        # 등록된 경로가 있으면 새로고침
+        if self._case_path:
+            self.load_foam(self._case_path)
+            return
+
         folder_path = QFileDialog.getExistingDirectory(
             self,
             "Select OpenFOAM Case Folder",
@@ -705,31 +711,77 @@ class PostprocessWidget(QWidget):
     # ===== 스칼라 바 =====
 
     def _create_scalar_bar(self, mapper, title: str, data_range: tuple):
-        """스칼라 바 생성"""
+        """스칼라 바 생성 (ParaView 스타일, 드래그 이동/리사이즈 가능)"""
         self._remove_scalar_bar()
 
         scalar_bar = vtk.vtkScalarBarActor()
         scalar_bar.SetLookupTable(mapper.GetLookupTable())
         scalar_bar.SetTitle(title)
-        scalar_bar.SetNumberOfLabels(5)
-        scalar_bar.SetPosition(0.9, 0.1)
-        scalar_bar.SetWidth(0.08)
-        scalar_bar.SetHeight(0.8)
+        scalar_bar.SetNumberOfLabels(7)
 
-        # 글자 크기 축소 (기본 크기의 절반)
+        # 레이아웃
+        scalar_bar.SetTextPositionToPrecedeScalarBar()
+        scalar_bar.SetBarRatio(0.25)
+        scalar_bar.SetTitleRatio(0.35)
+        scalar_bar.SetLabelFormat("%-#6.4g")
         scalar_bar.SetUnconstrainedFontSize(True)
-        title_prop = scalar_bar.GetTitleTextProperty()
-        title_prop.SetFontSize(8)
-        label_prop = scalar_bar.GetLabelTextProperty()
-        label_prop.SetFontSize(8)
+        scalar_bar.SetFixedAnnotationLeaderLineColor(True)
 
-        self.renderer.AddActor2D(scalar_bar)
+        # 배경/프레임 비활성화
+        scalar_bar.SetDrawBackground(False)
+        scalar_bar.SetDrawFrame(False)
+
+        # 제목 스타일 (ParaView: 흰색, 볼드, Arial, 그림자)
+        title_prop = scalar_bar.GetTitleTextProperty()
+        title_prop.SetFontFamilyToArial()
+        title_prop.SetFontSize(24)
+        title_prop.SetBold(True)
+        title_prop.SetItalic(False)
+        title_prop.SetColor(1.0, 1.0, 1.0)
+        title_prop.SetShadow(True)
+        title_prop.SetShadowOffset(1, -1)
+
+        # 라벨 스타일 (ParaView: 흰색, Arial, 그림자)
+        label_prop = scalar_bar.GetLabelTextProperty()
+        label_prop.SetFontFamilyToArial()
+        label_prop.SetFontSize(16)
+        label_prop.SetBold(False)
+        label_prop.SetItalic(False)
+        label_prop.SetColor(1.0, 1.0, 1.0)
+        label_prop.SetShadow(True)
+        label_prop.SetShadowOffset(1, -1)
+        label_prop.SetJustificationToLeft()
+
+        # Annotation 텍스트 스타일
+        ann_prop = scalar_bar.GetAnnotationTextProperty()
+        ann_prop.SetFontFamilyToArial()
+        ann_prop.SetFontSize(10)
+        ann_prop.SetColor(1.0, 1.0, 1.0)
+        ann_prop.SetShadow(True)
+
         self.scalar_bar_actor = scalar_bar
+
+        # vtkScalarBarWidget으로 감싸서 드래그 이동/리사이즈 가능하게
+        widget = vtk.vtkScalarBarWidget()
+        widget.SetInteractor(self.interactor)
+        widget.SetScalarBarActor(scalar_bar)
+        widget.SetRepositionable(True)
+        widget.SetResizable(True)
+
+        # 초기 위치/크기
+        rep = widget.GetRepresentation()
+        rep.SetPosition(0.87, 0.08)
+        rep.SetPosition2(0.12, 0.72)
+
+        widget.On()
+        self.scalar_bar_widget = widget
 
     def _remove_scalar_bar(self):
         """스칼라 바 제거"""
+        if self.scalar_bar_widget:
+            self.scalar_bar_widget.Off()
+            self.scalar_bar_widget = None
         if self.scalar_bar_actor:
-            self.renderer.RemoveActor2D(self.scalar_bar_actor)
             self.scalar_bar_actor = None
 
     def _on_scalar_bar_toggled(self, checked: bool):

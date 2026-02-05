@@ -47,14 +47,14 @@ class TreeWidget(QObject):
             }
             QTreeWidget::item {
                 height: 24px;
-                border-right: 1px dotted #bbb;
+                border-right: 1px dotted palette(mid);
             }
             QTreeWidget::item:hover {
-                background-color: #e6f0ff;
+                background-color: palette(midlight);
                 border-radius: 3px;
             }
             QTreeWidget::item:selected {
-                background-color: #c1d8ff;
+                background-color: palette(highlight);
                 border-radius: 3px;
             }
         """)

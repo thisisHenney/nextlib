@@ -40,10 +40,17 @@ class ResidualPlotWidget(QWidget):
         frame_layout.setSpacing(0)
 
         # 그래프 위젯 생성 (초기에는 빈 화면)
-        self.plot_widget = pg.PlotWidget(background='w')
+        self.plot_widget = pg.PlotWidget(background='#1e1e1e')
         frame_layout.addWidget(self.plot_widget)
 
         layout.addWidget(self.plot_frame, stretch=1)
+
+        # Axis text color for dark theme
+        axis_pen = pg.mkPen(color='#cccccc')
+        for axis_name in ('bottom', 'left'):
+            axis = self.plot_widget.getAxis(axis_name)
+            axis.setPen(axis_pen)
+            axis.setTextPen(axis_pen)
 
         # y축 로그 스케일
         self.plot_widget.setLogMode(y=True)
@@ -52,8 +59,8 @@ class ResidualPlotWidget(QWidget):
         self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
 
         # 축 라벨만 미리 지정해둠
-        self.plot_widget.setLabel('bottom', 'Time')
-        self.plot_widget.setLabel('left', 'Residual')
+        self.plot_widget.setLabel('bottom', 'Time', color='#cccccc')
+        self.plot_widget.setLabel('left', 'Residual', color='#cccccc')
 
         # 색상/스타일
         self.curve_style = {

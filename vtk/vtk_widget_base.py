@@ -249,6 +249,14 @@ class VtkWidgetBase(QMainWindow):
         self._view_combo.currentTextChanged.connect(self._on_view_style_changed)
         self.toolbar.addWidget(self._view_combo)
 
+        # ===== 바닥 평면 =====
+        self._ground_plane_combo = QComboBox()
+        self._ground_plane_combo.addItems(["Off", "XY", "YZ", "XZ"])
+        self._ground_plane_combo.setCurrentText("Off")
+        self._ground_plane_combo.setToolTip("Ground Plane")
+        self._ground_plane_combo.currentTextChanged.connect(self._on_ground_plane_changed)
+        self.toolbar.addWidget(self._ground_plane_combo)
+
         self.toolbar.addSeparator()
 
         # ===== 가시성 토글 버튼 =====
@@ -447,6 +455,13 @@ class VtkWidgetBase(QMainWindow):
         # 클립 액터에도 스타일 적용
         self._apply_style_to_clip_actors(style)
         self.render()
+
+    def _on_ground_plane_changed(self, plane: str):
+        """바닥 평면 변경"""
+        if plane == "Off":
+            self.hide_ground_plane()
+        else:
+            self.show_ground_plane(plane=plane.lower())
 
     def _on_scene_tree_toggled(self, checked: bool):
         """씬 트리 토글"""
@@ -1006,16 +1021,17 @@ class VtkWidgetBase(QMainWindow):
 
     # ===== 바닥 평면 (Ground Plane) =====
 
-    def show_ground_plane(self, scale: float = 1.4, offset_ratio: float = 0.05):
-        """객체 아래에 반투명 X-Y 바닥 평면 표시
+    def show_ground_plane(self, plane: str = "xy", scale: float = 1.4, offset_ratio: float = 0.05):
+        """객체 아래에 반투명 바닥 평면 표시
 
         Args:
+            plane: 평면 종류 ("xy", "yz", "xz")
             scale: 평면 크기 배율 (기본 1.4 = 바운딩 박스의 1.4배)
-            offset_ratio: Z 아래 오프셋 비율 (기본 0.05 = 높이의 5% 아래)
+            offset_ratio: 오프셋 비율 (기본 0.05 = 크기의 5% 오프셋)
 
         사용 예시:
-            widget.show_ground_plane()
-            widget.show_ground_plane(scale=1.5, offset_ratio=0.1)
+            widget.show_ground_plane("xy")
+            widget.show_ground_plane("yz", scale=1.5)
         """
         from vtkmodules.vtkFiltersSources import vtkPlaneSource
         from vtkmodules.vtkRenderingCore import vtkPolyDataMapper, vtkActor
@@ -1056,19 +1072,38 @@ class VtkWidgetBase(QMainWindow):
         # 중심점
         center_x = (min_x + max_x) / 2
         center_y = (min_y + max_y) / 2
-
-        # scale 배율로 평면 크기 확장
-        half_width = (size_x * scale) / 2
-        half_height = (size_y * scale) / 2
-
-        # Z 위치: 바운딩 박스 아래 (offset_ratio만큼 아래)
-        plane_z = min_z - (size_z * offset_ratio)
+        center_z = (min_z + max_z) / 2
 
         # 평면 생성
         plane_source = vtkPlaneSource()
-        plane_source.SetOrigin(center_x - half_width, center_y - half_height, plane_z)
-        plane_source.SetPoint1(center_x + half_width, center_y - half_height, plane_z)
-        plane_source.SetPoint2(center_x - half_width, center_y + half_height, plane_z)
+
+        if plane == "xy":
+            # XY 평면 (Z 방향 법선) - 바닥
+            half_w = (size_x * scale) / 2
+            half_h = (size_y * scale) / 2
+            plane_pos = min_z - (size_z * offset_ratio)
+            plane_source.SetOrigin(center_x - half_w, center_y - half_h, plane_pos)
+            plane_source.SetPoint1(center_x + half_w, center_y - half_h, plane_pos)
+            plane_source.SetPoint2(center_x - half_w, center_y + half_h, plane_pos)
+        elif plane == "yz":
+            # YZ 평면 (X 방향 법선) - 왼쪽 벽
+            half_w = (size_y * scale) / 2
+            half_h = (size_z * scale) / 2
+            plane_pos = min_x - (size_x * offset_ratio)
+            plane_source.SetOrigin(plane_pos, center_y - half_w, center_z - half_h)
+            plane_source.SetPoint1(plane_pos, center_y + half_w, center_z - half_h)
+            plane_source.SetPoint2(plane_pos, center_y - half_w, center_z + half_h)
+        elif plane == "xz":
+            # XZ 평면 (Y 방향 법선) - 뒤쪽 벽
+            half_w = (size_x * scale) / 2
+            half_h = (size_z * scale) / 2
+            plane_pos = min_y - (size_y * offset_ratio)
+            plane_source.SetOrigin(center_x - half_w, plane_pos, center_z - half_h)
+            plane_source.SetPoint1(center_x + half_w, plane_pos, center_z - half_h)
+            plane_source.SetPoint2(center_x - half_w, plane_pos, center_z + half_h)
+        else:
+            return  # 알 수 없는 평면
+
         plane_source.SetXResolution(10)
         plane_source.SetYResolution(10)
         plane_source.Update()
@@ -1107,10 +1142,12 @@ class VtkWidgetBase(QMainWindow):
 
         Args:
             scale: 평면 크기 배율
-            offset_ratio: Z 아래 오프셋 비율
+            offset_ratio: 오프셋 비율
         """
-        if self._ground_plane_actor:
-            self.show_ground_plane(scale, offset_ratio)
+        if self._ground_plane_actor and hasattr(self, '_ground_plane_combo'):
+            plane = self._ground_plane_combo.currentText().lower()
+            if plane != "off":
+                self.show_ground_plane(plane=plane, scale=scale, offset_ratio=offset_ratio)
 
     def is_ground_plane_visible(self) -> bool:
         """바닥 평면 가시성 확인"""

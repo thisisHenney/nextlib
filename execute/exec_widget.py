@@ -145,9 +145,10 @@ class ExecWidget(QWidget):
         self._scrollbar_last_position = -1
 
         # 출력 버퍼링 (GUI 락 방지)
-        self._output_buffer = {}  # {proc_idx: text}
+        self._output_buffer = {}  # {proc_idx: [text_chunks]}
         self._flush_timer = None
-        self._flush_interval = 50  # ms
+        self._flush_interval = 100  # ms (더 긴 간격으로 GUI 부하 감소)
+        self._max_lines = 10000  # QTextEdit 최대 라인 수
 
         self._initialize()
 
@@ -382,26 +383,8 @@ class ExecWidget(QWidget):
         self._idle_ratio = ratio
 
     def set_tracking(self, tracking=True):
-        scrollbar = self._output_view.verticalScrollBar()
-        if tracking:
-            self._output_view.verticalScrollBar().setTracking(tracking)
-            scrollbar.rangeChanged.connect(self._changed_range_scrollbar)
-            scrollbar.setSliderPosition(scrollbar.maximum())
-            self._is_tracking = True
-        else:
-            if self._is_tracking:
-                scrollbar.rangeChanged.disconnect()
-            self._is_tracking = False
-
-    def _changed_range_scrollbar(self, _min, _max):
-        scrollbar = self._output_view.verticalScrollBar()
-
-        if self._scrollbar_last_position == -1:
-            scrollbar.setSliderPosition(_max)
-        elif self._scrollbar_last_position <= scrollbar.value():
-            scrollbar.setSliderPosition(_max)
-
-        self._scrollbar_last_position = _max
+        # rangeChanged 연결 제거 - 버퍼 플러시 시에만 스크롤 (성능 최적화)
+        self._is_tracking = tracking
 
     def set_scroll_bottom(self, index=0):
         if index == 0:
@@ -465,42 +448,62 @@ class ExecWidget(QWidget):
 
     def add_message_output(self, text='', proc_idx=0, record=True):
         if record:
-            self._all_msgs[proc_idx] += f'{text}'
-        # 버퍼에 추가 (타이머가 주기적으로 플러시)
+            self._all_msgs[proc_idx] += text
+        # 버퍼에 추가 (리스트로 관리하여 문자열 연결 비용 제거)
         if proc_idx not in self._output_buffer:
-            self._output_buffer[proc_idx] = ''
-        self._output_buffer[proc_idx] += text
+            self._output_buffer[proc_idx] = []
+        self._output_buffer[proc_idx].append(text)
 
     def add_message_error(self, text='', proc_idx=0, record=True):
         if record:
-            self._all_msgs[proc_idx] += f'{text}'
-        # 버퍼에 추가 (타이머가 주기적으로 플러시)
+            self._all_msgs[proc_idx] += text
+        # 버퍼에 추가 (리스트로 관리)
         if proc_idx not in self._output_buffer:
-            self._output_buffer[proc_idx] = ''
-        self._output_buffer[proc_idx] += text
+            self._output_buffer[proc_idx] = []
+        self._output_buffer[proc_idx].append(text)
 
     def _flush_output_buffer(self):
         """버퍼에 쌓인 출력을 GUI에 한 번에 추가 (GUI 락 방지)"""
         current_view = self.get_current_view() - 1
-        if current_view < 0 or current_view not in self._output_buffer:
+        if current_view < 0:
             return
 
-        text = self._output_buffer.get(current_view, '')
-        if not text:
+        chunks = self._output_buffer.get(current_view, [])
+        if not chunks:
             return
 
         # 버퍼 클리어
-        self._output_buffer[current_view] = ''
+        self._output_buffer[current_view] = []
+
+        # 청크들을 한 번에 합침 (join은 O(n)으로 효율적)
+        text = ''.join(chunks)
+        if not text:
+            return
 
         # GUI 업데이트 일시 중지
         self._output_view.setUpdatesEnabled(False)
 
+        # 텍스트 추가
         cursor = self._output_view.textCursor()
-        cursor.movePosition(QTextCursor.End)
+        cursor.movePosition(QTextCursor.MoveOperation.End)
         cursor.insertText(text)
+
+        # 최대 라인 수 제한 (너무 많으면 앞부분 삭제)
+        doc = self._output_view.document()
+        if doc.blockCount() > self._max_lines:
+            cursor.movePosition(QTextCursor.MoveOperation.Start)
+            cursor.movePosition(QTextCursor.MoveOperation.Down,
+                                QTextCursor.MoveMode.KeepAnchor,
+                                doc.blockCount() - self._max_lines)
+            cursor.removeSelectedText()
 
         # GUI 업데이트 재개
         self._output_view.setUpdatesEnabled(True)
+
+        # 트래킹 중이면 스크롤
+        if self._is_tracking:
+            scrollbar = self._output_view.verticalScrollBar()
+            scrollbar.setValue(scrollbar.maximum())
 
     def set_text(self, text='', index=0):
         if index == 0:

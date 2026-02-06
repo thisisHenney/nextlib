@@ -1091,7 +1091,7 @@ class VtkWidgetBase(QMainWindow):
         plane_source = vtkPlaneSource()
 
         if plane == "xy":
-            # XY 평면 (Z 방향 법선) - 바닥
+            # XY 평면 (Z 방향 법선) - 뒤쪽 벽 (Y가 위쪽일 때)
             half_w = (size_x * scale) / 2
             half_h = (size_y * scale) / 2
             plane_pos = min_z - (size_z * offset_ratio)
@@ -1099,7 +1099,7 @@ class VtkWidgetBase(QMainWindow):
             plane_source.SetPoint1(center_x + half_w, center_y - half_h, plane_pos)
             plane_source.SetPoint2(center_x - half_w, center_y + half_h, plane_pos)
         elif plane == "yz":
-            # YZ 평면 (X 방향 법선) - 왼쪽 벽
+            # YZ 평면 (X 방향 법선) - 왼쪽 벽 (Y가 위쪽일 때)
             half_w = (size_y * scale) / 2
             half_h = (size_z * scale) / 2
             plane_pos = min_x - (size_x * offset_ratio)
@@ -1107,7 +1107,7 @@ class VtkWidgetBase(QMainWindow):
             plane_source.SetPoint1(plane_pos, center_y + half_w, center_z - half_h)
             plane_source.SetPoint2(plane_pos, center_y - half_w, center_z + half_h)
         elif plane == "xz":
-            # XZ 평면 (Y 방향 법선) - 바닥 (위에서 내려다볼 때)
+            # XZ 평면 (Y 방향 법선) - 바닥 (Y가 위쪽일 때)
             half_w = (size_x * scale) / 2
             half_h = (size_z * scale) / 2
             plane_pos = min_y - (size_y * offset_ratio)
@@ -1171,6 +1171,8 @@ class VtkWidgetBase(QMainWindow):
 
         VTK 위젯이 처음 표시될 때 호출하여
         기본 바닥 평면과 카메라 뷰를 설정합니다.
+
+        VTK 좌표계: X=오른쪽, Y=위쪽, Z=화면 앞쪽
         """
         # 기본 XZ 평면 표시
         if hasattr(self, '_ground_plane_combo'):
@@ -1178,11 +1180,11 @@ class VtkWidgetBase(QMainWindow):
             if plane != "off":
                 self.show_ground_plane(plane=plane)
 
-        # 45도 위에서 내려다보는 뷰 설정
+        # 45도 위에서 내려다보는 뷰 설정 (Y축이 위)
         cam = self.renderer.GetActiveCamera()
-        cam.SetPosition(3, 3, 3)  # 대각선 위치
+        cam.SetPosition(3, 3, 3)  # 대각선 위치 (오른쪽-위-앞)
         cam.SetFocalPoint(0, 0, 0)  # 원점 바라보기
-        cam.SetViewUp(0, 0, 1)  # Z축이 위
+        cam.SetViewUp(0, 1, 0)  # Y축이 위
         self.renderer.ResetCamera()
         self.render()
 

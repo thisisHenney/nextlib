@@ -1069,10 +1069,10 @@ class VtkWidgetBase(QMainWindow):
             except:
                 continue
 
-        # 객체가 없으면 기본 크기 사용 (원점 중심, 크기 2)
+        # 객체가 없으면 기본 크기 사용 (바닥 평면이 아래로 내려간 상태)
         if not has_objects or min_x == float("inf"):
             min_x, max_x = -1.0, 1.0
-            min_y, max_y = -1.0, 1.0
+            min_y, max_y = -0.6, 1.4  # 바닥 평면이 y=-0.6에 위치
             min_z, max_z = -1.0, 1.0
             scale = 1.0  # 기본 크기일 때는 스케일 1
             offset_ratio = 0.0  # 오프셋 없음
@@ -1183,7 +1183,7 @@ class VtkWidgetBase(QMainWindow):
         # 45도 위에서 내려다보는 뷰 설정 (Y축이 위)
         cam = self.renderer.GetActiveCamera()
         cam.SetPosition(2, 3, 3)  # 대각선 위치 (오른쪽-위-앞)
-        cam.SetFocalPoint(0, -0.3, 0)  # 원점보다 약간 아래 바라보기
+        cam.SetFocalPoint(0, 0, 0)  # 원점 바라보기
         cam.SetViewUp(0, 1, 0)  # Y축이 위
         self.renderer.ResetCamera()
         self.render()

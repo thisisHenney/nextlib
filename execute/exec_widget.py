@@ -148,7 +148,6 @@ class ExecWidget(QWidget):
         self._output_buffer = {}  # {proc_idx: [text_chunks]}
         self._flush_timer = None
         self._flush_interval = 100  # ms (더 긴 간격으로 GUI 부하 감소)
-        self._max_lines = 10000  # QTextEdit 최대 라인 수
 
         self._initialize()
 
@@ -487,15 +486,6 @@ class ExecWidget(QWidget):
         cursor = self._output_view.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         cursor.insertText(text)
-
-        # 최대 라인 수 제한 (너무 많으면 앞부분 삭제)
-        doc = self._output_view.document()
-        if doc.blockCount() > self._max_lines:
-            cursor.movePosition(QTextCursor.MoveOperation.Start)
-            cursor.movePosition(QTextCursor.MoveOperation.Down,
-                                QTextCursor.MoveMode.KeepAnchor,
-                                doc.blockCount() - self._max_lines)
-            cursor.removeSelectedText()
 
         # GUI 업데이트 재개
         self._output_view.setUpdatesEnabled(True)

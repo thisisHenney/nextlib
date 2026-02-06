@@ -4,7 +4,7 @@ import subprocess
 import time
 from functools import partial
 from pathlib import Path
-from PySide6.QtCore import Qt, QProcess, QProcessEnvironment, Signal, QThread   # QMutex
+from PySide6.QtCore import Qt, QProcess, QProcessEnvironment, Signal, QThread, QTimer   # QMutex
 from PySide6.QtWidgets import QWidget
 from PySide6.QtGui import QTextCursor, QFontDatabase
 
@@ -144,6 +144,11 @@ class ExecWidget(QWidget):
         self._is_tracking = True
         self._scrollbar_last_position = -1
 
+        # 출력 버퍼링 (GUI 락 방지)
+        self._output_buffer = {}  # {proc_idx: text}
+        self._flush_timer = None
+        self._flush_interval = 50  # ms
+
         self._initialize()
 
     def get_current_view(self):
@@ -171,6 +176,11 @@ class ExecWidget(QWidget):
         self._ui.checkBox_tracking.stateChanged.connect(self._changed_state_combo_tracking)
         self._ui.progressBar.setValue(0)
         self._ui.comboBox_output_proc_index.currentIndexChanged.connect(self._changed_combo_output_cpu)
+
+        # 출력 버퍼 플러시 타이머 설정
+        self._flush_timer = QTimer(self)
+        self._flush_timer.timeout.connect(self._flush_output_buffer)
+        self._flush_timer.start(self._flush_interval)
 
     def _changed_state_combo_tracking(self, state):
         if state == 0:
@@ -452,18 +462,41 @@ class ExecWidget(QWidget):
     def add_message_output(self, text='', proc_idx=0, record=True):
         if record:
             self._all_msgs[proc_idx] += f'{text}'
-        if proc_idx == (self.get_current_view()-1):
-            cursor = self._output_view.textCursor()
-            cursor.movePosition(QTextCursor.End)
-            cursor.insertText(text)
+        # 버퍼에 추가 (타이머가 주기적으로 플러시)
+        if proc_idx not in self._output_buffer:
+            self._output_buffer[proc_idx] = ''
+        self._output_buffer[proc_idx] += text
 
     def add_message_error(self, text='', proc_idx=0, record=True):
         if record:
             self._all_msgs[proc_idx] += f'{text}'
-        if proc_idx == (self.get_current_view()-1):
-            cursor = self._output_view.textCursor()
-            cursor.movePosition(QTextCursor.End)
-            cursor.insertText(text)
+        # 버퍼에 추가 (타이머가 주기적으로 플러시)
+        if proc_idx not in self._output_buffer:
+            self._output_buffer[proc_idx] = ''
+        self._output_buffer[proc_idx] += text
+
+    def _flush_output_buffer(self):
+        """버퍼에 쌓인 출력을 GUI에 한 번에 추가 (GUI 락 방지)"""
+        current_view = self.get_current_view() - 1
+        if current_view < 0 or current_view not in self._output_buffer:
+            return
+
+        text = self._output_buffer.get(current_view, '')
+        if not text:
+            return
+
+        # 버퍼 클리어
+        self._output_buffer[current_view] = ''
+
+        # GUI 업데이트 일시 중지
+        self._output_view.setUpdatesEnabled(False)
+
+        cursor = self._output_view.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        cursor.insertText(text)
+
+        # GUI 업데이트 재개
+        self._output_view.setUpdatesEnabled(True)
 
     def set_text(self, text='', index=0):
         if index == 0:

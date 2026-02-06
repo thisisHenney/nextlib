@@ -399,11 +399,11 @@ class ExecWidget(QWidget):
             self._output_view.clear()
 
     def add_log_ready(self):
-        msg = f'<span style="font-weight: {WEIGHT_BOLD}; color: #000000;">&gt;&gt; Ready</span>\n'
+        msg = f'<span style="font-weight: {WEIGHT_BOLD};">&gt;&gt; Ready</span>\n'
         self._log_view.append(msg)
 
     def add_log_working_path(self, text):
-        msg = f'\n<span style="font-weight: {WEIGHT_BOLD}; color: #000000;"><br>&gt;&gt; Path: {text}</span>\n'
+        msg = f'\n<span style="font-weight: {WEIGHT_BOLD};"><br>&gt;&gt; Path: {text}</span>\n'
         self._log_view.append(msg)
 
     def add_log_command(self, count, text=''):
@@ -416,7 +416,7 @@ class ExecWidget(QWidget):
         self._log_view.append(msg)
 
     def add_log_warning(self, text=''):
-        msg = f'\n\n<span style="font-weight: {WEIGHT_BOLD}; color: lightgray;">&gt;&gt; {text}</span>\n'
+        msg = f'\n\n<span style="font-weight: {WEIGHT_BOLD}; color: yellow;">&gt;&gt; {text}</span>\n'
         self._log_view.append(msg)
 
     def add_log_error(self, count, text=''):
@@ -623,8 +623,8 @@ class ExecWidget(QWidget):
         cpu_id = get_cpu
         pid = -1  # Will be set after process starts
         self.sig_proc_status.emit(proc_idx, cpu_id, pid, 'Starting')
-        _start_state = self._procs[proc_idx].waitForStarted(-1)
-        if _start_state:
+
+        if self._procs[proc_idx].waitForStarted(5000):
             # State: Running
             pid = self._procs[proc_idx].processId()
             assign_cpu(pid, get_cpu)
@@ -713,10 +713,8 @@ class ExecWidget(QWidget):
             if self._funcs_restore_ui:
                 self._run_restore_ui()
 
-        # Only wait for thread if not proceeding to next command
-        # (if is_next is True, a new thread was started in _run_next)
+        # Clean up thread reference (thread will finish on its own)
         if not is_next and self._thread_find_cpus[proc_idx] is not None:
-            self._thread_find_cpus[proc_idx].wait()
             self._thread_find_cpus[proc_idx] = None
 
     def _run_next(self, proc_idx):
@@ -810,12 +808,11 @@ class ExecWidget(QWidget):
             for i, d in enumerate(self._procs):
                 if self._thread_find_cpus[i] is not None:
                     self._thread_find_cpus[i].stop_finding()
-                    self._thread_find_cpus[i].wait()
             return
 
         self._commands = []
 
-        for i, proc  in enumerate(self._procs):
+        for i, proc in enumerate(self._procs):
             if not proc:
                 continue
 
@@ -835,7 +832,6 @@ class ExecWidget(QWidget):
 
             elif self._procs_state[i] == QProcess_ProcessState_WAITING:
                 self._thread_find_cpus[i].stop_finding()
-                self._thread_find_cpus[i].wait()
 
             else:
                 ...
@@ -861,7 +857,6 @@ class ExecWidget(QWidget):
             for i, d in enumerate(self._thread_find_cpus):
                 if d is not None:
                     d.stop_finding()
-                    d.wait()
             return
 
         for i, proc in enumerate(self._procs):
@@ -869,17 +864,12 @@ class ExecWidget(QWidget):
                 proc_id = proc.processId()
                 try:
                     psutil.Process(proc_id).suspend()
-                    # subprocess.run(f'kill -STOP {proc_id}', shell=True)
-                    # os.system('kill -STOP %proc' % self._process_id)
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
 
             elif self._procs_state[i] == QProcess_ProcessState_WAITING:
                 self._thread_find_cpus[i].stop_finding()
-                self._thread_find_cpus[i].wait()
 
-            # elif self._procs_state[i] == QProcess_ProcessState_START:
-            #     ...
             else:
                 ...
 

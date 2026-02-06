@@ -1,12 +1,12 @@
 import re
 from pathlib import Path
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QToolBar, QFrame
+from PySide6.QtWidgets import QMainWindow, QVBoxLayout, QToolBar, QFrame
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Signal
 import pyqtgraph as pg
 
 
-class ResidualPlotWidget(QWidget):
+class ResidualPlotWidget(QMainWindow):
     # Signal emitted when refresh button is clicked
     refresh_requested = Signal()
 
@@ -15,54 +15,42 @@ class ResidualPlotWidget(QWidget):
 
         self.data = None
         self._current_log_path = None
+        self._drag_enabled = True
+        self._auto_arrange = True
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(4)
+        self._setup_ui()
+        self._build_toolbar()
 
-        # Toolbar
-        self.toolbar = QToolBar(self)
-        self._refresh_action = QAction("Refresh", self)
-        self._refresh_action.setToolTip("Reload residual log file")
-        self._refresh_action.triggered.connect(self._on_refresh)
-        self.toolbar.addAction(self._refresh_action)
-        layout.addWidget(self.toolbar)
+    def _setup_ui(self):
+        """UI layout setup (QMainWindow-based)."""
+        # Toolbar (floatable, movable)
+        self.toolbar = QToolBar("Residual Toolbar", self)
+        self.toolbar.setFloatable(True)
+        self.toolbar.setMovable(True)
+        self.addToolBar(self.toolbar)
 
-        # 그래프 위젯을 감싸는 프레임 (Styled Panel)
+        # Plot frame (Styled Panel)
         self.plot_frame = QFrame(self)
         self.plot_frame.setFrameShape(QFrame.Shape.StyledPanel)
         self.plot_frame.setFrameShadow(QFrame.Shadow.Sunken)
         self.plot_frame.setLineWidth(1)
 
-        # 프레임 내부 레이아웃
         frame_layout = QVBoxLayout(self.plot_frame)
         frame_layout.setContentsMargins(1, 1, 1, 1)
         frame_layout.setSpacing(0)
 
-        # 그래프 위젯 생성 (초기에는 빈 화면)
-        self.plot_widget = pg.PlotWidget(background='#1e1e1e')
+        self.plot_widget = pg.PlotWidget(background='w')
         frame_layout.addWidget(self.plot_widget)
 
-        layout.addWidget(self.plot_frame, stretch=1)
+        self.setCentralWidget(self.plot_frame)
 
-        # Axis text color for dark theme
-        axis_pen = pg.mkPen(color='#cccccc')
-        for axis_name in ('bottom', 'left'):
-            axis = self.plot_widget.getAxis(axis_name)
-            axis.setPen(axis_pen)
-            axis.setTextPen(axis_pen)
-
-        # y축 로그 스케일
+        # Plot configuration
         self.plot_widget.setLogMode(y=True)
-
-        # 그리드
         self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
+        self.plot_widget.setLabel('bottom', 'Time')
+        self.plot_widget.setLabel('left', 'Residual')
 
-        # 축 라벨만 미리 지정해둠
-        self.plot_widget.setLabel('bottom', 'Time', color='#cccccc')
-        self.plot_widget.setLabel('left', 'Residual', color='#cccccc')
-
-        # 색상/스타일
+        # Curve styles
         self.curve_style = {
             'Ux': dict(pen=pg.mkPen(color='r', width=2)),
             'Uy': dict(pen=pg.mkPen(color='g', width=2)),
@@ -70,6 +58,49 @@ class ResidualPlotWidget(QWidget):
             'epsilon': dict(pen=pg.mkPen(color='m', width=2)),
             'k': dict(pen=pg.mkPen(color='c', width=2)),
         }
+
+    def _build_toolbar(self):
+        """Build toolbar with actions."""
+        # Refresh
+        self._refresh_action = QAction("\u21BB", self)
+        self._refresh_action.setToolTip("Refresh")
+        self._refresh_action.triggered.connect(self._on_refresh)
+        self.toolbar.addAction(self._refresh_action)
+
+        self.toolbar.addSeparator()
+
+        # Drag/Pan toggle
+        self._drag_action = QAction("\u2726", self)
+        self._drag_action.setToolTip("Drag/Pan: On")
+        self._drag_action.setCheckable(True)
+        self._drag_action.setChecked(True)
+        self._drag_action.triggered.connect(self._on_drag_toggled)
+        self.toolbar.addAction(self._drag_action)
+
+        # Auto Arrange toggle
+        self._auto_action = QAction("\u2922", self)
+        self._auto_action.setToolTip("Auto Arrange: On")
+        self._auto_action.setCheckable(True)
+        self._auto_action.setChecked(True)
+        self._auto_action.triggered.connect(self._on_auto_arrange_toggled)
+        self.toolbar.addAction(self._auto_action)
+
+    def _on_drag_toggled(self, checked):
+        """Toggle mouse drag/pan on the plot."""
+        self._drag_enabled = checked
+        vb = self.plot_widget.getViewBox()
+        vb.setMouseEnabled(x=checked, y=checked)
+        self._drag_action.setToolTip("Drag/Pan: On" if checked else "Drag/Pan: Off")
+
+    def _on_auto_arrange_toggled(self, checked):
+        """Toggle auto-range on the plot."""
+        self._auto_arrange = checked
+        vb = self.plot_widget.getViewBox()
+        if checked:
+            vb.enableAutoRange()
+        else:
+            vb.disableAutoRange()
+        self._auto_action.setToolTip("Auto Arrange: On" if checked else "Auto Arrange: Off")
 
     def load_file(self, log_path: str):
         if not Path(log_path).is_file():
@@ -137,10 +168,8 @@ class ResidualPlotWidget(QWidget):
         time = self.data['time']
         res = self.data['residuals']
 
-        # 새로운 범례 추가
         self.legend = self.plot_widget.addLegend()
 
-        # 각 변수별 residual plot
         for key in res.keys():
             if len(res[key]) == len(time):
                 self.plot_widget.plot(
@@ -149,3 +178,6 @@ class ResidualPlotWidget(QWidget):
                     name=key,
                     **self.curve_style[key]
                 )
+
+        if self._auto_arrange:
+            self.plot_widget.getViewBox().enableAutoRange()

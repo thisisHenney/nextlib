@@ -11,7 +11,7 @@ from functools import partial
 from pathlib import Path
 from typing import Optional, Union, Dict, List
 
-from PySide6.QtWidgets import QWidget, QMainWindow, QVBoxLayout, QToolBar, QComboBox, QFrame
+from PySide6.QtWidgets import QWidget, QMainWindow, QVBoxLayout, QToolBar, QComboBox, QFrame, QProgressBar, QLabel, QHBoxLayout
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtCore import Signal
 
@@ -64,6 +64,9 @@ class VtkWidgetBase(QMainWindow):
         self._optional_tools: Dict[str, object] = {}
         self._optional_tool_actions: Dict[str, QAction] = {}
 
+        # 바닥 평면 (ground plane)
+        self._ground_plane_actor = None
+
         # UI 설정
         self._setup_ui()
         self._setup_vtk()
@@ -98,6 +101,43 @@ class VtkWidgetBase(QMainWindow):
         self.vtk_widget = QVTKRenderWindowInteractor(self.vtk_frame)
         frame_layout.addWidget(self.vtk_widget, stretch=1)
 
+        # 프로그레스바 (하단에 배치, 기본 숨김)
+        self._progress_container = QFrame(self.vtk_frame)
+        self._progress_container.setFixedHeight(24)
+        progress_layout = QHBoxLayout(self._progress_container)
+        progress_layout.setContentsMargins(4, 2, 4, 2)
+        progress_layout.setSpacing(8)
+
+        self._progress_label = QLabel("Loading...")
+        self._progress_label.setFixedWidth(100)
+        progress_layout.addWidget(self._progress_label)
+
+        self._progress_bar = QProgressBar()
+        self._progress_bar.setTextVisible(True)
+        self._progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #555;
+                border-radius: 3px;
+                background-color: #2d2d2d;
+                text-align: center;
+                color: white;
+                font-weight: bold;
+            }
+            QProgressBar::chunk {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #2e8b57,
+                    stop:0.5 #3cb371,
+                    stop:1 #20b2aa
+                );
+                border-radius: 2px;
+            }
+        """)
+        progress_layout.addWidget(self._progress_bar, stretch=1)
+
+        frame_layout.addWidget(self._progress_container)
+        self._progress_container.hide()
+
         self.setCentralWidget(self.vtk_frame)
 
     def _setup_vtk(self):
@@ -130,7 +170,8 @@ class VtkWidgetBase(QMainWindow):
         """툴바 구성 - 서브클래스에서 오버라이드 가능"""
         # ===== 카메라 뷰 =====
         # Home
-        self._add_action("Home", "home.png", self.camera.home)
+        home = self._add_action("\u2302", "", self.camera.home)
+        home.setToolTip("Home")
 
         # 6방향 뷰
         for name in ["Front", "Back", "Left", "Right", "Top", "Bottom"]:
@@ -201,8 +242,8 @@ class VtkWidgetBase(QMainWindow):
 
     def _set_background(self):
         """배경색 설정 - ParaView 스타일 그라데이션"""
-        self.renderer.SetBackground(0.15, 0.15, 0.18)   # 하단 (어두운 회색)
-        self.renderer.SetBackground2(0.25, 0.27, 0.33)  # 상단 (짙은 청회색)
+        self.renderer.SetBackground(0.45, 0.48, 0.55)   # 하단 (밝은 청회색)
+        self.renderer.SetBackground2(0.88, 0.91, 0.98)  # 상단 (더 밝은 회청색)
         self.renderer.GradientBackgroundOn()
 
     # ===== 툴바 헬퍼 =====
@@ -819,6 +860,149 @@ class VtkWidgetBase(QMainWindow):
                 clip_actor.SetVisibility(True)
         self.render()
 
+    # ===== 바닥 평면 (Ground Plane) =====
+
+    def show_ground_plane(self, scale: float = 1.4, offset_ratio: float = 0.05):
+        """객체 아래에 반투명 X-Y 바닥 평면 표시
+
+        Args:
+            scale: 평면 크기 배율 (기본 1.4 = 바운딩 박스의 1.4배)
+            offset_ratio: Z 아래 오프셋 비율 (기본 0.05 = 높이의 5% 아래)
+
+        사용 예시:
+            widget.show_ground_plane()
+            widget.show_ground_plane(scale=1.5, offset_ratio=0.1)
+        """
+        from vtkmodules.vtkFiltersSources import vtkPlaneSource
+        from vtkmodules.vtkRenderingCore import vtkPolyDataMapper, vtkActor
+
+        # 기존 바닥 평면 제거
+        self.hide_ground_plane()
+
+        # 전체 바운딩 박스 계산
+        all_objs = self.obj_manager.get_all()
+        if not all_objs:
+            return
+
+        min_x, min_y, min_z = float("inf"), float("inf"), float("inf")
+        max_x, max_y, max_z = float("-inf"), float("-inf"), float("-inf")
+
+        for obj in all_objs:
+            try:
+                if not obj.actor.GetVisibility():
+                    continue
+                bounds = obj.actor.GetBounds()
+                min_x = min(min_x, bounds[0])
+                max_x = max(max_x, bounds[1])
+                min_y = min(min_y, bounds[2])
+                max_y = max(max_y, bounds[3])
+                min_z = min(min_z, bounds[4])
+                max_z = max(max_z, bounds[5])
+            except:
+                continue
+
+        if min_x == float("inf"):
+            return
+
+        # 바운딩 박스 크기
+        size_x = max_x - min_x
+        size_y = max_y - min_y
+        size_z = max_z - min_z
+
+        # 중심점
+        center_x = (min_x + max_x) / 2
+        center_y = (min_y + max_y) / 2
+
+        # scale 배율로 평면 크기 확장
+        half_width = (size_x * scale) / 2
+        half_height = (size_y * scale) / 2
+
+        # Z 위치: 바운딩 박스 아래 (offset_ratio만큼 아래)
+        plane_z = min_z - (size_z * offset_ratio)
+
+        # 평면 생성
+        plane_source = vtkPlaneSource()
+        plane_source.SetOrigin(center_x - half_width, center_y - half_height, plane_z)
+        plane_source.SetPoint1(center_x + half_width, center_y - half_height, plane_z)
+        plane_source.SetPoint2(center_x - half_width, center_y + half_height, plane_z)
+        plane_source.SetXResolution(10)
+        plane_source.SetYResolution(10)
+        plane_source.Update()
+
+        mapper = vtkPolyDataMapper()
+        mapper.SetInputConnection(plane_source.GetOutputPort())
+
+        self._ground_plane_actor = vtkActor()
+        self._ground_plane_actor.SetMapper(mapper)
+
+        # 반투명 스타일 설정
+        prop = self._ground_plane_actor.GetProperty()
+        prop.SetColor(0.95, 0.95, 0.95)  # 더 밝은 회색 (거의 흰색)
+        prop.SetOpacity(0.4)  # 반투명
+        prop.SetRepresentationToSurface()
+        prop.EdgeVisibilityOn()
+        prop.SetEdgeColor(0.85, 0.85, 0.85)  # 밝은 회색 격자선
+        prop.SetLineWidth(1.0)
+
+        self.renderer.AddActor(self._ground_plane_actor)
+
+        self.render()
+
+    def hide_ground_plane(self):
+        """바닥 평면 숨기기"""
+        if self._ground_plane_actor:
+            try:
+                self.renderer.RemoveActor(self._ground_plane_actor)
+            except:
+                pass
+            self._ground_plane_actor = None
+            self.render()
+
+    def update_ground_plane(self, scale: float = 1.4, offset_ratio: float = 0.05):
+        """바닥 평면 업데이트 (객체 변경 후 호출)
+
+        Args:
+            scale: 평면 크기 배율
+            offset_ratio: Z 아래 오프셋 비율
+        """
+        if self._ground_plane_actor:
+            self.show_ground_plane(scale, offset_ratio)
+
+    def is_ground_plane_visible(self) -> bool:
+        """바닥 평면 가시성 확인"""
+        return self._ground_plane_actor is not None
+
+    # ===== 프로그레스바 =====
+
+    def show_progress(self, label: str = "Loading...", value: int = 0, maximum: int = 100):
+        """프로그레스바 표시
+
+        Args:
+            label: 프로그레스바 왼쪽에 표시할 텍스트
+            value: 현재 값 (0~maximum)
+            maximum: 최대값
+        """
+        self._progress_label.setText(label)
+        self._progress_bar.setMaximum(maximum)
+        self._progress_bar.setValue(value)
+        self._progress_container.show()
+
+    def update_progress(self, value: int, label: str = None):
+        """프로그레스바 값 업데이트
+
+        Args:
+            value: 현재 값
+            label: 레이블 텍스트 (None이면 변경 안 함)
+        """
+        self._progress_bar.setValue(value)
+        if label is not None:
+            self._progress_label.setText(label)
+
+    def hide_progress(self):
+        """프로그레스바 숨기기"""
+        self._progress_container.hide()
+        self._progress_bar.setValue(0)
+
     # ===== 선택적 도구 관리 =====
 
     def add_tool(self, tool_name: str, icon_on: str = None, icon_off: str = None) -> bool:
@@ -1030,6 +1214,9 @@ class VtkWidgetBase(QMainWindow):
             # 클립 정리
             self._clear_clip()
             self._restore_original_visibility()
+
+            # 바닥 평면 정리
+            self.hide_ground_plane()
 
             # 선택적 도구 정리
             for tool_name in list(self._optional_tools.keys()):

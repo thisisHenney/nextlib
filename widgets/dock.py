@@ -53,11 +53,85 @@ class DockWidget(QObject):
         self.dock_manager = CDockManager(self.dock_container)
         self.dock_layout.addWidget(self.dock_manager)
 
+        # 독 탭 스타일 적용
+        self._apply_tab_style()
+
         self.visibility_changed.emit(0, False)
+
+    def _apply_tab_style(self):
+        """독 탭바 스타일 적용 - 비활성 탭 가독성 향상."""
+        self.dock_manager.setStyleSheet("""
+            ads--CDockAreaTitleBar {
+                background: palette(window);
+                border-bottom: 1px solid palette(mid);
+                padding: 0px;
+            }
+
+            ads--CDockWidgetTab {
+                background: palette(window);
+                border-top: 2px solid transparent;
+                border-right: 1px solid palette(mid);
+                padding: 2px 10px;
+                min-width: 60px;
+            }
+
+            ads--CDockWidgetTab QLabel {
+                color: palette(text);
+                font-size: 10pt;
+            }
+
+            ads--CDockWidgetTab:hover {
+                background: palette(midlight);
+            }
+
+            ads--CDockWidgetTab[activeTab="true"] {
+                background: palette(base);
+                border-top: 2px solid #3574C4;
+            }
+
+            ads--CDockWidgetTab[activeTab="true"] QLabel {
+                color: palette(text);
+                font-weight: bold;
+            }
+
+            /* Close button: hidden by default */
+            ads--CDockWidgetTab #tabCloseButton {
+                background: transparent;
+                border: none;
+                padding: 0px;
+                margin: 0px;
+                max-width: 0px;
+                max-height: 0px;
+                icon-size: 0px;
+            }
+
+            /* Close button: visible on tab hover */
+            ads--CDockWidgetTab:hover #tabCloseButton {
+                max-width: 16px;
+                max-height: 16px;
+                icon-size: 12px;
+                padding: 0px 2px;
+            }
+
+            ads--CDockWidgetTab:hover #tabCloseButton:hover {
+                background: palette(mid);
+                border-radius: 3px;
+            }
+        """)
 
     def add_center_dock(self, widget: QWidget, title = "Center Dock"):
         center_dock = CDockWidget(self.dock_manager, title, self.parent)
-        center_dock.setWidget(widget)
+
+        if isinstance(widget, QMainWindow):
+            widget.setStatusBar(None)
+            container = QWidget()
+            layout = QVBoxLayout(container)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.addWidget(widget, stretch=1)
+            center_dock.setWidget(container)
+        else:
+            center_dock.setWidget(widget)
+
         self.dock_manager.setCentralWidget(center_dock)
 
         self.docks[0] = DockInfo(center_dock, title, True, "center")
@@ -122,23 +196,31 @@ class DockWidget(QObject):
         self.tabifyDockWidget
 
 
-    # def save_layout(self, filepath=None):
-    #     if filepath is None:
-    #         filepath = self.layout_file
-    #     state = self.dock_manager.saveState()
-    #     with open(filepath, 'wb') as f:
-    #         f.write(state)
-    #     print(f"Layout saved to {filepath}")
-    #
-    # def restore_layout(self, filepath=None):
-    #     if filepath is None:
-    #         filepath = self.layout_file
-    #     if os.path.exists(filepath):
-    #         with open(filepath, 'rb') as f:
-    #             state = f.read()
-    #         self.dock_manager.restoreState(state)
-    #         print(f"Layout restored from {filepath}")
-    #     else:
-    #         print("No saved layout file found.")
+    def save_layout(self, filepath=None):
+        if filepath is None:
+            filepath = self.docks_layout_file
+        if not filepath:
+            return False
+        try:
+            state = self.dock_manager.saveState()
+            with open(filepath, 'wb') as f:
+                f.write(bytes(state))
+            return True
+        except Exception as e:
+            print(f"Failed to save dock layout: {e}")
+            return False
+
+    def restore_layout(self, filepath=None):
+        if filepath is None:
+            filepath = self.docks_layout_file
+        if not filepath or not os.path.exists(filepath):
+            return False
+        try:
+            with open(filepath, 'rb') as f:
+                state = f.read()
+            return self.dock_manager.restoreState(state)
+        except Exception as e:
+            print(f"Failed to restore dock layout: {e}")
+            return False
 
 

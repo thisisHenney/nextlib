@@ -475,11 +475,11 @@ class ObjectManager(QObject):
                     if self._show_individual_outlines:
                         self._add_outline(obj)
                 else:
-                    # 선택되지 않은 객체: 투명하고 연한 엣지
-                    prop.SetOpacity(0.25)
-                    prop.SetEdgeColor(0.6, 0.6, 0.7)  # 연한 보라색 엣지
-                    # 면 색상도 연하게 (원래 색상과 흰색 혼합)
-                    faded_color = tuple(min(1.0, c * 0.3 + 0.7) for c in norm_color)
+                    # 선택되지 않은 객체: 반투명 + 채도 낮은 파란 회색 톤
+                    prop.SetOpacity(0.35)
+                    prop.SetEdgeColor(0.4, 0.45, 0.55)  # 파란 회색 엣지
+                    # 면 색상: 채도 낮은 파란 회색 톤 (배경과 구분되는 색)
+                    faded_color = (0.45, 0.50, 0.58)  # 파란 회색
                     prop.SetColor(faded_color)
 
             # 선택된 객체들의 bbox 표시

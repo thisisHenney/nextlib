@@ -5,11 +5,12 @@ OpenFOAM 케이스 파일을 불러와 필드 데이터를 시각화하는 기�
 from functools import partial
 from pathlib import Path
 from PySide6.QtWidgets import (
-    QMainWindow, QVBoxLayout, QToolBar, QComboBox,
-    QFileDialog, QLabel, QSlider, QCheckBox, QMessageBox, QLineEdit, QFrame
+    QMainWindow, QVBoxLayout, QHBoxLayout, QToolBar, QComboBox,
+    QFileDialog, QLabel, QSlider, QCheckBox, QMessageBox, QLineEdit, QFrame,
+    QProgressBar
 )
 from PySide6.QtGui import QAction, QIcon, QDoubleValidator
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal, Qt, QThread, QObject
 
 import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
@@ -28,6 +29,56 @@ vtk.vtkObject.GlobalWarningDisplayOff()
 
 RES_DIR = Path(__file__).resolve().parent
 ICON_DIR = RES_DIR / "res" / "icon"
+
+
+class FoamLoaderWorker(QObject):
+    """OpenFOAM 케이스 비동기 로딩 워커"""
+    finished = Signal(bool, object)  # success, foam_reader or error_msg
+    progress = Signal(str)  # status message
+
+    def __init__(self, file_path: str):
+        super().__init__()
+        self.file_path = file_path
+        self._cancelled = False
+
+    def run(self):
+        """백그라운드에서 OpenFOAM 케이스 로드"""
+        try:
+            self.progress.emit("Initializing...")
+
+            # OpenFOAMReader 사용 가능 여부 확인
+            if not OpenFOAMReader.is_available():
+                self.finished.emit(False, "vtkOpenFOAMReader not available")
+                return
+
+            # 폴더인 경우 OpenFOAM 케이스인지 확인
+            path = Path(self.file_path)
+            if path.is_dir() and not OpenFOAMReader.is_openfoam_case(path):
+                self.finished.emit(False, "Invalid OpenFOAM case")
+                return
+
+            if self._cancelled:
+                return
+
+            self.progress.emit("Loading case...")
+
+            # OpenFOAMReader로 로드
+            foam_reader = OpenFOAMReader()
+            if not foam_reader.load(self.file_path):
+                self.finished.emit(False, "Load failed")
+                return
+
+            if self._cancelled:
+                return
+
+            self.progress.emit("Processing...")
+            self.finished.emit(True, foam_reader)
+
+        except Exception as e:
+            self.finished.emit(False, str(e))
+
+    def cancel(self):
+        self._cancelled = True
 
 
 class PostprocessWidget(QMainWindow):
@@ -66,6 +117,10 @@ class PostprocessWidget(QMainWindow):
         self.scalar_bar_widget = None
         self.scalar_bar_visible = True
 
+        # Async loader
+        self._loader_thread: QThread | None = None
+        self._loader_worker: FoamLoaderWorker | None = None
+
         self._setup_ui()
         self._setup_vtk()
         self._setup_tools()
@@ -97,6 +152,44 @@ class PostprocessWidget(QMainWindow):
         self.vtk_widget = QVTKRenderWindowInteractor(self.vtk_frame)
         frame_layout.addWidget(self.vtk_widget, stretch=1)
 
+        # 프로그레스 바 컨테이너 (하단)
+        self._progress_container = QFrame(self.vtk_frame)
+        self._progress_container.setFixedHeight(24)
+        progress_layout = QHBoxLayout(self._progress_container)
+        progress_layout.setContentsMargins(4, 2, 4, 2)
+        progress_layout.setSpacing(8)
+
+        self._progress_label = QLabel("Loading...")
+        self._progress_label.setStyleSheet("color: white; font-weight: bold;")
+        progress_layout.addWidget(self._progress_label)
+
+        self._progress_bar = QProgressBar()
+        self._progress_bar.setRange(0, 0)  # Indeterminate mode
+        self._progress_bar.setTextVisible(False)
+        self._progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #555;
+                border-radius: 3px;
+                background-color: #2d2d2d;
+                text-align: center;
+                color: white;
+                font-weight: bold;
+            }
+            QProgressBar::chunk {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #2e8b57,
+                    stop:0.5 #3cb371,
+                    stop:1 #20b2aa
+                );
+                border-radius: 2px;
+            }
+        """)
+        progress_layout.addWidget(self._progress_bar, stretch=1)
+
+        frame_layout.addWidget(self._progress_container)
+        self._progress_container.hide()
+
         self.setCentralWidget(self.vtk_frame)
 
     def _setup_vtk(self):
@@ -104,6 +197,21 @@ class PostprocessWidget(QMainWindow):
         self.renderer = vtkRenderer()
         self.vtk_widget.GetRenderWindow().AddRenderer(self.renderer)
         self.interactor = self.vtk_widget.GetRenderWindow().GetInteractor()
+
+    # ===== Progress Bar =====
+
+    def show_progress(self, message: str = "Loading..."):
+        """프로그레스 바 표시"""
+        self._progress_label.setText(message)
+        self._progress_container.show()
+
+    def update_progress(self, message: str):
+        """프로그레스 메시지 업데이트"""
+        self._progress_label.setText(message)
+
+    def hide_progress(self):
+        """프로그레스 바 숨김"""
+        self._progress_container.hide()
 
     def _setup_tools(self):
         """VTK 도구 초기화"""
@@ -116,11 +224,13 @@ class PostprocessWidget(QMainWindow):
     def _build_toolbar(self):
         """툴바 구성"""
         # 파일 로드
-        self._add_action("Refresh", "open.png", lambda: self.load_foam_file())
+        refresh = self._add_action("\u21BB", "", lambda: self.load_foam_file())
+        refresh.setToolTip("Refresh")
         self.toolbar.addSeparator()
 
         # Home
-        self._add_action("Home", "home.png", self.camera.home)
+        home = self._add_action("\u2302", "", self.camera.home)
+        home.setToolTip("Home")
 
         # 6방향 뷰
         for name in ["Front", "Back", "Left", "Right", "Top", "Bottom"]:
@@ -157,6 +267,7 @@ class PostprocessWidget(QMainWindow):
     def _build_control_panel(self):
         """필드 선택 및 슬라이스 컨트롤 툴바 (하단 영역)"""
         ctrl_toolbar = QToolBar("Controls", self)
+        ctrl_toolbar.setObjectName("vtkBottomBar")
         ctrl_toolbar.setFloatable(True)
         ctrl_toolbar.setMovable(True)
 
@@ -233,8 +344,8 @@ class PostprocessWidget(QMainWindow):
 
     def _set_background(self):
         """배경 설정"""
-        self.renderer.SetBackground2(0.25, 0.27, 0.33)
-        self.renderer.SetBackground(0.15, 0.15, 0.18)
+        self.renderer.SetBackground2(0.40, 0.40, 0.50)
+        self.renderer.SetBackground(0.65, 0.65, 0.70)
         self.renderer.GradientBackgroundOn()
 
     # ===== 파일 로딩 =====
@@ -269,7 +380,7 @@ class PostprocessWidget(QMainWindow):
             self.load_foam(folder_path)
 
     def load_foam(self, file_path: str):
-        """OpenFOAM 케이스 로드 (.foam 파일 또는 케이스 폴더)"""
+        """OpenFOAM 케이스 비동기 로드 (.foam 파일 또는 케이스 폴더)"""
         # OpenFOAMReader 사용 가능 여부 확인
         if not OpenFOAMReader.is_available():
             QMessageBox.warning(
@@ -283,7 +394,6 @@ class PostprocessWidget(QMainWindow):
             return
 
         # 폴더인 경우 OpenFOAM 케이스인지 먼저 확인
-        from pathlib import Path
         path = Path(file_path)
         if path.is_dir() and not OpenFOAMReader.is_openfoam_case(path):
             QMessageBox.warning(
@@ -296,15 +406,58 @@ class PostprocessWidget(QMainWindow):
             )
             return
 
-        # OpenFOAMReader로 로드
-        self.foam_reader = OpenFOAMReader()
-        if not self.foam_reader.load(file_path):
+        # 이전 로더가 실행 중이면 취소
+        self._cancel_loading()
+
+        # 프로그레스 바 표시
+        self.show_progress("Loading case...")
+
+        # 비동기 로딩 시작
+        self._loader_thread = QThread()
+        self._loader_worker = FoamLoaderWorker(file_path)
+        self._loader_worker.moveToThread(self._loader_thread)
+
+        # 시그널 연결
+        self._loader_thread.started.connect(self._loader_worker.run)
+        self._loader_worker.progress.connect(self.update_progress)
+        self._loader_worker.finished.connect(self._on_foam_loaded)
+        self._loader_worker.finished.connect(self._loader_thread.quit)
+        self._loader_worker.finished.connect(self._loader_worker.deleteLater)
+        self._loader_thread.finished.connect(self._loader_thread.deleteLater)
+
+        # 로드 시작
+        self._loader_thread.start()
+
+    def _cancel_loading(self):
+        """진행 중인 로딩 취소"""
+        if self._loader_worker:
+            self._loader_worker.cancel()
+        if self._loader_thread and self._loader_thread.isRunning():
+            self._loader_thread.quit()
+            self._loader_thread.wait(1000)
+        self._loader_thread = None
+        self._loader_worker = None
+
+    def _on_foam_loaded(self, success: bool, result):
+        """비동기 로딩 완료 콜백"""
+        self.hide_progress()
+        self._loader_thread = None
+        self._loader_worker = None
+
+        if not success:
+            error_msg = result if isinstance(result, str) else "Unknown error"
             QMessageBox.warning(
                 self, "Load Failed",
-                f"OpenFOAM 케이스 로드 실패:\n{file_path}"
+                f"OpenFOAM 케이스 로드 실패:\n{error_msg}"
             )
             return
 
+        # 로딩 성공 - result는 OpenFOAMReader 객체
+        self.foam_reader = result
+        self._finalize_foam_load()
+
+    def _finalize_foam_load(self):
+        """OpenFOAM 케이스 로드 완료 처리"""
         # VTK 리더 참조 (기존 코드 호환용)
         self.reader = self.foam_reader.get_reader()
 
@@ -337,7 +490,10 @@ class PostprocessWidget(QMainWindow):
             self._display_field()
 
         self.fit_to_scene()
-        self.case_loaded.emit(str(file_path))
+
+        # 케이스 경로 저장 및 시그널 발생
+        case_path = self.foam_reader._case_path if hasattr(self.foam_reader, '_case_path') else None
+        self.case_loaded.emit(str(case_path) if case_path else "")
 
     def _extract_fields(self) -> list:
         """MultiBlock에서 필드 이름 추출"""
@@ -500,6 +656,10 @@ class PostprocessWidget(QMainWindow):
             data_range = arr.GetRange()
             mapper.SetScalarRange(data_range)
 
+            # Blue-to-Red 컬러맵 적용
+            lut = self._create_blue_to_red_lut(data_range)
+            mapper.SetLookupTable(lut)
+
             # Scalar bar 업데이트
             if self.scalar_bar_visible:
                 self._create_scalar_bar(mapper, field, data_range)
@@ -582,6 +742,10 @@ class PostprocessWidget(QMainWindow):
         else:
             mapper.SetScalarModeToUseCellFieldData()
         mapper.SetScalarRange(data_range)
+
+        # Blue-to-Red 컬러맵 적용
+        lut = self._create_blue_to_red_lut(data_range)
+        mapper.SetLookupTable(lut)
 
         # Scalar bar
         if self.scalar_bar_visible:
@@ -710,6 +874,21 @@ class PostprocessWidget(QMainWindow):
 
     # ===== 스칼라 바 =====
 
+    def _create_blue_to_red_lut(self, data_range: tuple):
+        """파란색(낮음) → 빨간색(높음) 컬러맵 룩업테이블 생성"""
+        lut = vtk.vtkLookupTable()
+        lut.SetNumberOfTableValues(256)
+        lut.SetRange(data_range)
+
+        # Blue (low) → Red (high)
+        # Hue: 0.667 (blue) → 0.0 (red)
+        lut.SetHueRange(0.667, 0.0)
+        lut.SetSaturationRange(1.0, 1.0)
+        lut.SetValueRange(1.0, 1.0)
+        lut.Build()
+
+        return lut
+
     def _create_scalar_bar(self, mapper, title: str, data_range: tuple):
         """스칼라 바 생성 (ParaView 스타일, 드래그 이동/리사이즈 가능)"""
         self._remove_scalar_bar()
@@ -831,6 +1010,9 @@ class PostprocessWidget(QMainWindow):
 
     def cleanup(self):
         """리소스 정리"""
+        # 진행 중인 로딩 취소
+        self._cancel_loading()
+
         try:
             if self.interactor:
                 self.interactor.Disable()

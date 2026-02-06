@@ -6,7 +6,7 @@ from functools import partial
 from pathlib import Path
 from PySide6.QtCore import Qt, QProcess, QProcessEnvironment, Signal, QThread   # QMutex
 from PySide6.QtWidgets import QWidget
-from PySide6.QtGui import QTextCursor
+from PySide6.QtGui import QTextCursor, QFontDatabase
 
 from nextlib.utils.type import is_integer
 from nextlib.utils.time import seconds_to_time
@@ -215,6 +215,12 @@ class ExecWidget(QWidget):
 
         self._output_view = self._ui.textEdit_output
         self._output_view.clear()
+
+        # 고정폭 폰트 설정
+        mono_font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
+        mono_font.setPointSize(FONT_SIZE)
+        self._log_view.setFont(mono_font)
+        self._output_view.setFont(mono_font)
 
     def put_in_layout(self, layout):
         layout.addWidget(self)

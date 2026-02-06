@@ -251,13 +251,41 @@ class VtkWidgetBase(QMainWindow):
 
         self.toolbar.addSeparator()
 
-        # ===== 씬 트리 토글 =====
+        # ===== 가시성 토글 버튼 =====
+        self._geom_visible_action = QAction("\U0001F4D0", self)  # 📐 (Geometry)
+        self._geom_visible_action.setToolTip("Show Geometry")
+        self._geom_visible_action.setCheckable(True)
+        self._geom_visible_action.setChecked(True)
+        self._geom_visible_action.triggered.connect(self._on_geometry_visibility_toggled)
+        self.toolbar.addAction(self._geom_visible_action)
+
+        self._mesh_visible_action = QAction("\U0001F5A7", self)  # 🖧 (Mesh)
+        self._mesh_visible_action.setToolTip("Show Mesh")
+        self._mesh_visible_action.setCheckable(True)
+        self._mesh_visible_action.setChecked(False)
+        self._mesh_visible_action.triggered.connect(self._on_mesh_visibility_toggled)
+        self.toolbar.addAction(self._mesh_visible_action)
+
+        self._both_visible_action = QAction("\u229E", self)  # ⊞ (Both)
+        self._both_visible_action.setToolTip("Show Both (Geometry + Mesh)")
+        self._both_visible_action.setCheckable(True)
+        self._both_visible_action.setChecked(False)
+        self._both_visible_action.triggered.connect(self._on_both_visibility_toggled)
+        self.toolbar.addAction(self._both_visible_action)
+
+        # 가시성 상태 추적
+        self._visibility_mode = "geometry"  # "geometry", "mesh", "both"
+
+        self.toolbar.addSeparator()
+
+        # ===== 씬 트리 토글 (기본 숨김) =====
         self._scene_tree_action = QAction("\u2630", self)  # ☰ (햄버거 메뉴 아이콘)
         self._scene_tree_action.setToolTip("Scene Tree")
         self._scene_tree_action.setCheckable(True)
         self._scene_tree_action.setChecked(False)
         self._scene_tree_action.triggered.connect(self._on_scene_tree_toggled)
         self.toolbar.addAction(self._scene_tree_action)
+        self._scene_tree_action.setVisible(False)  # 기본 숨김
 
         # 클립 관련 변수 초기화 (UI 컨트롤은 외부 패널에서 제공)
         self._clip_plane = None
@@ -332,6 +360,84 @@ class VtkWidgetBase(QMainWindow):
         icon_name = "parallel.png" if checked else "perspective.png"
         self._projection_action.setIcon(self._make_icon(icon_name))
         self.camera.set_parallel_projection(checked)
+
+    def _on_geometry_visibility_toggled(self, checked: bool):
+        """Geometry 가시성 토글 (사용자가 버튼 클릭)"""
+        if checked:
+            self.set_visibility_mode("geometry", apply_visibility=True)
+        else:
+            # 체크 해제 시 다시 체크 (최소 하나는 선택)
+            self._geom_visible_action.setChecked(True)
+
+    def _on_mesh_visibility_toggled(self, checked: bool):
+        """Mesh 가시성 토글 (사용자가 버튼 클릭)"""
+        if checked:
+            self.set_visibility_mode("mesh", apply_visibility=True)
+        else:
+            # 체크 해제 시 다시 체크 (최소 하나는 선택)
+            self._mesh_visible_action.setChecked(True)
+
+    def _on_both_visibility_toggled(self, checked: bool):
+        """Both (Geometry + Mesh) 가시성 토글 (사용자가 버튼 클릭)"""
+        if checked:
+            self.set_visibility_mode("both", apply_visibility=True)
+        else:
+            # 체크 해제 시 다시 체크 (최소 하나는 선택)
+            self._both_visible_action.setChecked(True)
+
+    def _apply_visibility_mode(self, mode: str):
+        """가시성 모드 실제 적용 (내부용)
+
+        Args:
+            mode: "geometry", "mesh", "both" 중 하나
+        """
+        # 객체 가시성 업데이트
+        for obj in self.obj_manager.get_all():
+            group = getattr(obj, 'group', 'default')
+
+            if mode == "geometry":
+                obj.actor.SetVisibility(group == "geometry")
+            elif mode == "mesh":
+                obj.actor.SetVisibility(group == "mesh")
+            elif mode == "both":
+                # Both: geometry는 반투명, mesh는 불투명
+                obj.actor.SetVisibility(True)
+                if group == "geometry":
+                    obj.actor.GetProperty().SetOpacity(0.3)
+                else:
+                    obj.actor.GetProperty().SetOpacity(1.0)
+
+        # Both가 아닐 때 opacity 복원
+        if mode != "both":
+            for obj in self.obj_manager.get_all():
+                obj.actor.GetProperty().SetOpacity(1.0)
+
+        self.render()
+
+    def get_visibility_mode(self) -> str:
+        """현재 가시성 모드 반환"""
+        return self._visibility_mode
+
+    def set_visibility_mode(self, mode: str, apply_visibility: bool = False):
+        """외부에서 가시성 모드 설정
+
+        Args:
+            mode: "geometry", "mesh", "both" 중 하나
+            apply_visibility: True면 실제 가시성도 변경, False면 버튼 상태만 동기화
+        """
+        if mode not in ("geometry", "mesh", "both"):
+            return
+
+        self._visibility_mode = mode
+
+        # 버튼 상태 동기화 (라디오 버튼처럼 동작)
+        self._geom_visible_action.setChecked(mode == "geometry")
+        self._mesh_visible_action.setChecked(mode == "mesh")
+        self._both_visible_action.setChecked(mode == "both")
+
+        # apply_visibility=True일 때만 실제 가시성 변경
+        if apply_visibility:
+            self._apply_visibility_mode(mode)
 
     def _on_view_style_changed(self, style: str):
         """뷰 스타일 변경"""

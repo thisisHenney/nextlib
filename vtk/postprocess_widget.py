@@ -160,7 +160,7 @@ class PostprocessWidget(QMainWindow):
         progress_layout.setSpacing(8)
 
         self._progress_label = QLabel("Loading...")
-        self._progress_label.setStyleSheet("color: white; font-weight: bold;")
+        self._progress_label.setStyleSheet("color: #333; font-weight: bold;")
         progress_layout.addWidget(self._progress_label)
 
         self._progress_bar = QProgressBar()
@@ -168,19 +168,19 @@ class PostprocessWidget(QMainWindow):
         self._progress_bar.setTextVisible(False)
         self._progress_bar.setStyleSheet("""
             QProgressBar {
-                border: 1px solid #555;
+                border: 1px solid #aaa;
                 border-radius: 3px;
-                background-color: #2d2d2d;
+                background-color: #e8e8ec;
                 text-align: center;
-                color: white;
+                color: #333;
                 font-weight: bold;
             }
             QProgressBar::chunk {
                 background: qlineargradient(
                     x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #2e8b57,
-                    stop:0.5 #3cb371,
-                    stop:1 #20b2aa
+                    stop:0 #3b82f6,
+                    stop:0.5 #22c55e,
+                    stop:1 #f97316
                 );
                 border-radius: 2px;
             }
@@ -343,9 +343,9 @@ class PostprocessWidget(QMainWindow):
         return QIcon()
 
     def _set_background(self):
-        """배경 설정"""
-        self.renderer.SetBackground2(0.40, 0.40, 0.50)
-        self.renderer.SetBackground(0.65, 0.65, 0.70)
+        """배경색 설정 - Fusion 360 스타일 화이트 그라데이션"""
+        self.renderer.SetBackground(0.75, 0.78, 0.82)   # 하단 (미디엄 그레이)
+        self.renderer.SetBackground2(0.98, 0.98, 1.0)   # 상단 (거의 흰색)
         self.renderer.GradientBackgroundOn()
 
     # ===== 파일 로딩 =====
@@ -916,27 +916,25 @@ class PostprocessWidget(QMainWindow):
         title_prop.SetFontSize(24)
         title_prop.SetBold(True)
         title_prop.SetItalic(False)
-        title_prop.SetColor(1.0, 1.0, 1.0)
-        title_prop.SetShadow(True)
-        title_prop.SetShadowOffset(1, -1)
+        title_prop.SetColor(0.2, 0.2, 0.25)  # Fusion 360 스타일: 다크 그레이
+        title_prop.SetShadow(False)
 
-        # 라벨 스타일 (ParaView: 흰색, Arial, 그림자)
+        # 라벨 스타일 (Fusion 360: 다크 그레이, Arial)
         label_prop = scalar_bar.GetLabelTextProperty()
         label_prop.SetFontFamilyToArial()
         label_prop.SetFontSize(16)
         label_prop.SetBold(False)
         label_prop.SetItalic(False)
-        label_prop.SetColor(1.0, 1.0, 1.0)
-        label_prop.SetShadow(True)
-        label_prop.SetShadowOffset(1, -1)
+        label_prop.SetColor(0.2, 0.2, 0.25)  # Fusion 360 스타일: 다크 그레이
+        label_prop.SetShadow(False)
         label_prop.SetJustificationToLeft()
 
         # Annotation 텍스트 스타일
         ann_prop = scalar_bar.GetAnnotationTextProperty()
         ann_prop.SetFontFamilyToArial()
         ann_prop.SetFontSize(10)
-        ann_prop.SetColor(1.0, 1.0, 1.0)
-        ann_prop.SetShadow(True)
+        ann_prop.SetColor(0.2, 0.2, 0.25)  # Fusion 360 스타일: 다크 그레이
+        ann_prop.SetShadow(False)
 
         self.scalar_bar_actor = scalar_bar
 

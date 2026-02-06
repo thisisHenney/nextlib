@@ -27,8 +27,8 @@ from vtkmodules.vtkRenderingCore import vtkPolyDataMapper, vtkActor
 class GeometrySource:
     """기본 VTK 형상 생성기"""
 
-    # 기본 색상
-    DEFAULT_COLOR = (200, 200, 200)
+    # 기본 색상 - Fusion 360 스타일 미디엄 그레이
+    DEFAULT_COLOR = (153, 166, 179)
 
     @staticmethod
     def _create_actor(source, color: Tuple[int, int, int]) -> vtkActor:

@@ -179,7 +179,7 @@ class ObjectManager(QObject):
         prop = actor.GetProperty()
         prop.SetRepresentationToSurface()
         prop.EdgeVisibilityOn()
-        prop.SetEdgeColor(0.25, 0.25, 0.45)  # 파라뷰 스타일 보라색 엣지
+        prop.SetEdgeColor(0.3, 0.3, 0.35)  # Fusion 360 스타일 다크 그레이 엣지
 
         self.renderer.AddActor(actor)
 
@@ -305,7 +305,7 @@ class ObjectManager(QObject):
             norm_color = tuple(c / 255.0 for c in obj.color)
 
             prop.SetOpacity(0.25)
-            prop.SetEdgeColor(0.6, 0.6, 0.7)  # 연한 보라색 엣지
+            prop.SetEdgeColor(0.5, 0.5, 0.55)  # Fusion 360 스타일 연한 그레이 엣지
             faded_color = tuple(min(1.0, c * 0.3 + 0.7) for c in norm_color)
             prop.SetColor(faded_color)
 
@@ -469,17 +469,17 @@ class ObjectManager(QObject):
                 if obj.id in self._selected_ids:
                     # 선택된 객체: 원래 상태로 복원
                     prop.SetOpacity(1.0)
-                    prop.SetEdgeColor(0.25, 0.25, 0.45)  # 파라뷰 스타일 보라색 엣지
+                    prop.SetEdgeColor(0.3, 0.3, 0.35)  # Fusion 360 스타일 다크 그레이 엣지
                     prop.SetColor(norm_color)  # 원래 색상
                     # 개별 outline 표시 옵션이 켜져 있을 때만 추가
                     if self._show_individual_outlines:
                         self._add_outline(obj)
                 else:
-                    # 선택되지 않은 객체: 반투명 + 채도 낮은 파란 회색 톤
+                    # 선택되지 않은 객체: 반투명 + 연한 그레이 톤
                     prop.SetOpacity(0.35)
-                    prop.SetEdgeColor(0.4, 0.45, 0.55)  # 파란 회색 엣지
-                    # 면 색상: 채도 낮은 파란 회색 톤 (배경과 구분되는 색)
-                    faded_color = (0.45, 0.50, 0.58)  # 파란 회색
+                    prop.SetEdgeColor(0.5, 0.5, 0.55)  # Fusion 360 스타일 연한 그레이 엣지
+                    # 면 색상: 연한 그레이 톤 (배경과 구분되는 색)
+                    faded_color = (0.7, 0.72, 0.75)  # 연한 그레이
                     prop.SetColor(faded_color)
 
             # 선택된 객체들의 bbox 표시
@@ -491,7 +491,7 @@ class ObjectManager(QObject):
                     continue
                 prop = obj.actor.GetProperty()
                 prop.SetOpacity(obj.opacity)
-                prop.SetEdgeColor(0.25, 0.25, 0.45)  # 파라뷰 스타일 보라색 엣지
+                prop.SetEdgeColor(0.3, 0.3, 0.35)  # Fusion 360 스타일 다크 그레이 엣지
                 # RGB 0-255를 0-1로 변환
                 norm_color = tuple(c / 255.0 for c in obj.color)
                 prop.SetColor(norm_color)  # 원래 색상

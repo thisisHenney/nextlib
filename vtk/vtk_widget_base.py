@@ -11,9 +11,9 @@ from functools import partial
 from pathlib import Path
 from typing import Optional, Union, Dict, List
 
-from PySide6.QtWidgets import QWidget, QMainWindow, QVBoxLayout, QToolBar, QComboBox, QFrame, QProgressBar, QLabel, QHBoxLayout
+from PySide6.QtWidgets import QWidget, QMainWindow, QVBoxLayout, QToolBar, QComboBox, QFrame, QProgressBar, QLabel, QHBoxLayout, QSplitter
 from PySide6.QtGui import QAction, QIcon
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, Qt
 
 import vtkmodules.vtkRenderingOpenGL2  # noqa: F401 (OpenGL 초기화 필요)
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
@@ -27,6 +27,7 @@ from nextlib.vtk.camera import Camera
 from nextlib.vtk.core import ObjectManager, ObjectAccessor, GroupAccessor
 from nextlib.vtk.core.scene_state import SceneState
 from nextlib.vtk.tool import AxesTool, RulerTool, PointProbeTool
+from nextlib.vtk.scene_tree_widget import SceneTreeWidget
 
 
 # 리소스 경로
@@ -67,6 +68,10 @@ class VtkWidgetBase(QMainWindow):
         # 바닥 평면 (ground plane)
         self._ground_plane_actor = None
 
+        # 씬 트리 (기본 비활성화)
+        self._scene_tree: Optional[SceneTreeWidget] = None
+        self._scene_tree_enabled = False
+
         # UI 설정
         self._setup_ui()
         self._setup_vtk()
@@ -86,8 +91,15 @@ class VtkWidgetBase(QMainWindow):
         self.toolbar.setMovable(True)
         self.addToolBar(self.toolbar)
 
-        # VTK 위젯을 감싸는 프레임 (Styled Panel) - 중앙 위젯으로 설정
-        self.vtk_frame = QFrame(self)
+        # 메인 스플리터 (씬 트리 + VTK 프레임)
+        self._main_splitter = QSplitter(Qt.Orientation.Horizontal, self)
+
+        # 씬 트리 위젯 (초기 숨김)
+        self._scene_tree = SceneTreeWidget(self._main_splitter)
+        self._scene_tree.hide()
+
+        # VTK 위젯을 감싸는 프레임 (Styled Panel)
+        self.vtk_frame = QFrame(self._main_splitter)
         self.vtk_frame.setFrameShape(QFrame.Shape.StyledPanel)
         self.vtk_frame.setFrameShadow(QFrame.Shadow.Sunken)
         self.vtk_frame.setLineWidth(1)
@@ -116,19 +128,19 @@ class VtkWidgetBase(QMainWindow):
         self._progress_bar.setTextVisible(True)
         self._progress_bar.setStyleSheet("""
             QProgressBar {
-                border: 1px solid #555;
+                border: 1px solid #aaa;
                 border-radius: 3px;
-                background-color: #2d2d2d;
+                background-color: #e8e8ec;
                 text-align: center;
-                color: white;
+                color: #333;
                 font-weight: bold;
             }
             QProgressBar::chunk {
                 background: qlineargradient(
                     x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #2e8b57,
-                    stop:0.5 #3cb371,
-                    stop:1 #20b2aa
+                    stop:0 #3b82f6,
+                    stop:0.5 #22c55e,
+                    stop:1 #f97316
                 );
                 border-radius: 2px;
             }
@@ -138,7 +150,12 @@ class VtkWidgetBase(QMainWindow):
         frame_layout.addWidget(self._progress_container)
         self._progress_container.hide()
 
-        self.setCentralWidget(self.vtk_frame)
+        # 스플리터 설정 (씬 트리: 200px, VTK: 나머지)
+        self._main_splitter.setSizes([0, 1])  # 씬 트리 숨김 상태
+        self._main_splitter.setStretchFactor(0, 0)  # 씬 트리: 고정
+        self._main_splitter.setStretchFactor(1, 1)  # VTK: 확장
+
+        self.setCentralWidget(self._main_splitter)
 
     def _setup_vtk(self):
         """VTK 렌더러 및 인터랙터 설정"""
@@ -151,6 +168,10 @@ class VtkWidgetBase(QMainWindow):
         # 객체 관리자 (카메라보다 먼저 생성 - 더블클릭 선택 지원)
         self.obj_manager = ObjectManager(self.renderer)
         self.obj_manager.selection_changed.connect(self._on_selection_changed)
+
+        # 씬 트리에 ObjectManager 연결
+        if self._scene_tree:
+            self._scene_tree.set_object_manager(self.obj_manager)
 
         # 카메라 (obj_manager 전달하여 더블클릭 선택 지원)
         self.camera = Camera(self)
@@ -228,6 +249,16 @@ class VtkWidgetBase(QMainWindow):
         self._view_combo.currentTextChanged.connect(self._on_view_style_changed)
         self.toolbar.addWidget(self._view_combo)
 
+        self.toolbar.addSeparator()
+
+        # ===== 씬 트리 토글 =====
+        self._scene_tree_action = QAction("\u2630", self)  # ☰ (햄버거 메뉴 아이콘)
+        self._scene_tree_action.setToolTip("Scene Tree")
+        self._scene_tree_action.setCheckable(True)
+        self._scene_tree_action.setChecked(False)
+        self._scene_tree_action.triggered.connect(self._on_scene_tree_toggled)
+        self.toolbar.addAction(self._scene_tree_action)
+
         # 클립 관련 변수 초기화 (UI 컨트롤은 외부 패널에서 제공)
         self._clip_plane = None
         self._clip_actors = {}  # {obj_id: clipped_actor}
@@ -241,9 +272,9 @@ class VtkWidgetBase(QMainWindow):
         self._current_view_style = "surface with edge"  # 현재 뷰 스타일
 
     def _set_background(self):
-        """배경색 설정 - ParaView 스타일 그라데이션"""
-        self.renderer.SetBackground(0.45, 0.48, 0.55)   # 하단 (밝은 청회색)
-        self.renderer.SetBackground2(0.88, 0.91, 0.98)  # 상단 (더 밝은 회청색)
+        """배경색 설정 - Fusion 360 스타일 화이트 그라데이션"""
+        self.renderer.SetBackground(0.75, 0.78, 0.82)   # 하단 (미디엄 그레이)
+        self.renderer.SetBackground2(0.98, 0.98, 1.0)   # 상단 (거의 흰색)
         self.renderer.GradientBackgroundOn()
 
     # ===== 툴바 헬퍼 =====
@@ -310,6 +341,13 @@ class VtkWidgetBase(QMainWindow):
         # 클립 액터에도 스타일 적용
         self._apply_style_to_clip_actors(style)
         self.render()
+
+    def _on_scene_tree_toggled(self, checked: bool):
+        """씬 트리 토글"""
+        if checked:
+            self.enable_scene_tree()
+        else:
+            self.disable_scene_tree()
 
     def _on_clip_mode_changed(self, mode: str):
         """클립 모드 변경 (내부 처리)"""
@@ -504,7 +542,7 @@ class VtkWidgetBase(QMainWindow):
                 elif style == "surface with edge":
                     prop.SetRepresentationToSurface()
                     prop.EdgeVisibilityOn()
-                    prop.SetEdgeColor(0.1, 0.1, 0.4)
+                    prop.SetEdgeColor(0.3, 0.3, 0.35)  # Fusion 360 스타일
                 elif style == "transparent":
                     prop.SetRepresentationToSurface()
                     prop.EdgeVisibilityOff()
@@ -935,13 +973,13 @@ class VtkWidgetBase(QMainWindow):
         self._ground_plane_actor = vtkActor()
         self._ground_plane_actor.SetMapper(mapper)
 
-        # 반투명 스타일 설정
+        # 반투명 스타일 설정 - Fusion 360 스타일
         prop = self._ground_plane_actor.GetProperty()
-        prop.SetColor(0.95, 0.95, 0.95)  # 더 밝은 회색 (거의 흰색)
-        prop.SetOpacity(0.4)  # 반투명
+        prop.SetColor(0.85, 0.85, 0.88)  # 라이트 그레이
+        prop.SetOpacity(0.5)  # 반투명
         prop.SetRepresentationToSurface()
         prop.EdgeVisibilityOn()
-        prop.SetEdgeColor(0.85, 0.85, 0.85)  # 밝은 회색 격자선
+        prop.SetEdgeColor(0.7, 0.7, 0.75)  # 미디엄 그레이 격자선
         prop.SetLineWidth(1.0)
 
         self.renderer.AddActor(self._ground_plane_actor)
@@ -1205,6 +1243,90 @@ class VtkWidgetBase(QMainWindow):
             self.show_tool(tool_name)
         else:
             self.hide_tool(tool_name)
+
+    # ===== 씬 트리 =====
+
+    def enable_scene_tree(self):
+        """씬 트리 패널 활성화
+
+        VTK 위젯 왼쪽에 CAD 스타일의 객체 트리를 표시합니다.
+        사용자가 직접 객체 가시성을 제어할 수 있습니다.
+
+        사용 예시:
+            widget.enable_scene_tree()
+        """
+        if self._scene_tree_enabled:
+            return
+
+        self._scene_tree_enabled = True
+
+        # 툴바 버튼 상태 동기화
+        if hasattr(self, '_scene_tree_action'):
+            self._scene_tree_action.setChecked(True)
+
+        if self._scene_tree:
+            self._scene_tree.show()
+            self._scene_tree.refresh()
+            # 스플리터 크기 조정 (씬 트리: 200px)
+            self._main_splitter.setSizes([200, self.width() - 200])
+
+    def disable_scene_tree(self):
+        """씬 트리 패널 비활성화
+
+        사용 예시:
+            widget.disable_scene_tree()
+        """
+        if not self._scene_tree_enabled:
+            return
+
+        self._scene_tree_enabled = False
+
+        # 툴바 버튼 상태 동기화
+        if hasattr(self, '_scene_tree_action'):
+            self._scene_tree_action.setChecked(False)
+
+        if self._scene_tree:
+            self._scene_tree.hide()
+            # 스플리터 크기 조정 (씬 트리: 0px)
+            self._main_splitter.setSizes([0, self.width()])
+
+    def toggle_scene_tree(self):
+        """씬 트리 패널 토글
+
+        사용 예시:
+            widget.toggle_scene_tree()
+        """
+        if self._scene_tree_enabled:
+            self.disable_scene_tree()
+        else:
+            self.enable_scene_tree()
+
+    def is_scene_tree_enabled(self) -> bool:
+        """씬 트리 활성화 여부 반환"""
+        return self._scene_tree_enabled
+
+    @property
+    def scene_tree(self) -> Optional[SceneTreeWidget]:
+        """씬 트리 위젯 반환
+
+        사용 예시:
+            tree = widget.scene_tree
+            if tree:
+                tree.set_group_visible("geometry", False)
+                tree.visibility_changed.connect(my_handler)
+        """
+        return self._scene_tree
+
+    def refresh_scene_tree(self):
+        """씬 트리 새로고침
+
+        ObjectManager와 씬 트리를 동기화합니다.
+
+        사용 예시:
+            widget.refresh_scene_tree()
+        """
+        if self._scene_tree:
+            self._scene_tree.refresh()
 
     # ===== 정리 =====
 

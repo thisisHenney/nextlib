@@ -108,7 +108,7 @@ class MeshLoader(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.colors = vtkNamedColors()
-        self._default_color = self.colors.GetColor3d("Gainsboro")
+        self._default_color = (0.6, 0.65, 0.7)  # Fusion 360 스타일 미디엄 그레이
         self._worker = None
 
     def load_async(

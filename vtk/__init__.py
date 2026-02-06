@@ -1,5 +1,6 @@
 from .vtk_widget_base import VtkWidgetBase
 from .postprocess_widget import PostprocessWidget
+from .scene_tree_widget import SceneTreeWidget
 from .core import (
     ObjectData, ObjectManager, ObjectAccessor, GroupAccessor,
     GeometrySource, MeshLoader, OpenFOAMReader
@@ -14,6 +15,7 @@ __all__ = [
     "VtkWidgetBase",
     "PreprocessWidget",  # VtkWidgetBase 별칭
     "PostprocessWidget",
+    "SceneTreeWidget",
     "ObjectData",
     "ObjectManager",
     "ObjectAccessor",

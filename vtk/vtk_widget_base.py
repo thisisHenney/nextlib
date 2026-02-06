@@ -1182,8 +1182,8 @@ class VtkWidgetBase(QMainWindow):
 
         # 45도 위에서 내려다보는 뷰 설정 (Y축이 위)
         cam = self.renderer.GetActiveCamera()
-        cam.SetPosition(3, 3, 3)  # 대각선 위치 (오른쪽-위-앞)
-        cam.SetFocalPoint(0, 0, 0)  # 원점 바라보기
+        cam.SetPosition(2, 3, 3)  # 대각선 위치 (오른쪽-위-앞)
+        cam.SetFocalPoint(0, -0.3, 0)  # 원점보다 약간 아래 바라보기
         cam.SetViewUp(0, 1, 0)  # Y축이 위
         self.renderer.ResetCamera()
         self.render()

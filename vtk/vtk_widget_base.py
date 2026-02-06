@@ -81,6 +81,9 @@ class VtkWidgetBase(QMainWindow):
 
         self.interactor.Initialize()
 
+        # 기본 씬 초기화 (XZ 평면 + 45도 뷰)
+        self.init_default_scene()
+
     # ===== 초기화 =====
 
     def _setup_ui(self):
@@ -168,6 +171,7 @@ class VtkWidgetBase(QMainWindow):
         # 객체 관리자 (카메라보다 먼저 생성 - 더블클릭 선택 지원)
         self.obj_manager = ObjectManager(self.renderer)
         self.obj_manager.selection_changed.connect(self._on_selection_changed)
+        self.obj_manager.object_added.connect(self._on_object_added)
 
         # 씬 트리에 ObjectManager 연결
         if self._scene_tree:
@@ -252,7 +256,7 @@ class VtkWidgetBase(QMainWindow):
         # ===== 바닥 평면 =====
         self._ground_plane_combo = QComboBox()
         self._ground_plane_combo.addItems(["Off", "XY", "YZ", "XZ"])
-        self._ground_plane_combo.setCurrentText("Off")
+        self._ground_plane_combo.setCurrentText("XZ")  # 기본값: XZ 평면
         self._ground_plane_combo.setToolTip("Ground Plane")
         self._ground_plane_combo.currentTextChanged.connect(self._on_ground_plane_changed)
         self.toolbar.addWidget(self._ground_plane_combo)
@@ -804,6 +808,10 @@ class VtkWidgetBase(QMainWindow):
         """선택 변경 이벤트"""
         self.selection_changed.emit(info)
 
+    def _on_object_added(self, obj_id: int, name: str):
+        """객체 추가 이벤트 - 바닥 평면 자동 업데이트"""
+        self.update_ground_plane()
+
     # ===== 공개 API =====
 
     @property
@@ -1041,8 +1049,7 @@ class VtkWidgetBase(QMainWindow):
 
         # 전체 바운딩 박스 계산
         all_objs = self.obj_manager.get_all()
-        if not all_objs:
-            return
+        has_objects = False
 
         min_x, min_y, min_z = float("inf"), float("inf"), float("inf")
         max_x, max_y, max_z = float("-inf"), float("-inf"), float("-inf")
@@ -1058,11 +1065,17 @@ class VtkWidgetBase(QMainWindow):
                 max_y = max(max_y, bounds[3])
                 min_z = min(min_z, bounds[4])
                 max_z = max(max_z, bounds[5])
+                has_objects = True
             except:
                 continue
 
-        if min_x == float("inf"):
-            return
+        # 객체가 없으면 기본 크기 사용 (원점 중심, 크기 2)
+        if not has_objects or min_x == float("inf"):
+            min_x, max_x = -1.0, 1.0
+            min_y, max_y = -1.0, 1.0
+            min_z, max_z = -1.0, 1.0
+            scale = 1.0  # 기본 크기일 때는 스케일 1
+            offset_ratio = 0.0  # 오프셋 없음
 
         # 바운딩 박스 크기
         size_x = max_x - min_x
@@ -1094,7 +1107,7 @@ class VtkWidgetBase(QMainWindow):
             plane_source.SetPoint1(plane_pos, center_y + half_w, center_z - half_h)
             plane_source.SetPoint2(plane_pos, center_y - half_w, center_z + half_h)
         elif plane == "xz":
-            # XZ 평면 (Y 방향 법선) - 뒤쪽 벽
+            # XZ 평면 (Y 방향 법선) - 바닥 (위에서 내려다볼 때)
             half_w = (size_x * scale) / 2
             half_h = (size_z * scale) / 2
             plane_pos = min_y - (size_y * offset_ratio)
@@ -1144,7 +1157,7 @@ class VtkWidgetBase(QMainWindow):
             scale: 평면 크기 배율
             offset_ratio: 오프셋 비율
         """
-        if self._ground_plane_actor and hasattr(self, '_ground_plane_combo'):
+        if hasattr(self, '_ground_plane_combo'):
             plane = self._ground_plane_combo.currentText().lower()
             if plane != "off":
                 self.show_ground_plane(plane=plane, scale=scale, offset_ratio=offset_ratio)
@@ -1152,6 +1165,26 @@ class VtkWidgetBase(QMainWindow):
     def is_ground_plane_visible(self) -> bool:
         """바닥 평면 가시성 확인"""
         return self._ground_plane_actor is not None
+
+    def init_default_scene(self):
+        """기본 씬 초기화 (빈 화면에서 XZ 평면 + 45도 뷰)
+
+        VTK 위젯이 처음 표시될 때 호출하여
+        기본 바닥 평면과 카메라 뷰를 설정합니다.
+        """
+        # 기본 XZ 평면 표시
+        if hasattr(self, '_ground_plane_combo'):
+            plane = self._ground_plane_combo.currentText().lower()
+            if plane != "off":
+                self.show_ground_plane(plane=plane)
+
+        # 45도 위에서 내려다보는 뷰 설정
+        cam = self.renderer.GetActiveCamera()
+        cam.SetPosition(3, 3, 3)  # 대각선 위치
+        cam.SetFocalPoint(0, 0, 0)  # 원점 바라보기
+        cam.SetViewUp(0, 0, 1)  # Z축이 위
+        self.renderer.ResetCamera()
+        self.render()
 
     # ===== 프로그레스바 =====
 

@@ -226,10 +226,14 @@ class ExecWidget(QWidget):
         self._output_view = self._ui.textEdit_output
         self._output_view.clear()
 
-        # 고정폭 폰트 설정
+        # Log 뷰: 가변폭 폰트 (기본 폰트)
+        general_font = QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont)
+        general_font.setPointSize(FONT_SIZE)
+        self._log_view.setFont(general_font)
+
+        # Output 뷰: 고정폭 폰트
         mono_font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
         mono_font.setPointSize(FONT_SIZE)
-        self._log_view.setFont(mono_font)
         self._output_view.setFont(mono_font)
 
     def put_in_layout(self, layout):

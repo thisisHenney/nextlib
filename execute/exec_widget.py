@@ -104,6 +104,7 @@ class ExecWidget(QWidget):
         self._procs_cmd = []
         self._procs_state = []       # default is QProcess.ProcessState.NotRunning
         self._thread_find_cpus = []
+        self._pending_cpu_assign = {}  # {proc_idx: cpu_id} - for async CPU assignment
 
         self._stop_all_proc = False
         self._pause_all_proc = False
@@ -285,6 +286,7 @@ class ExecWidget(QWidget):
         self._procs_cmd = []
         self._procs_state = []
         self._thread_find_cpus = []
+        self._pending_cpu_assign = {}
 
         self._stop_all_proc = False
         self._pause_all_proc = False
@@ -317,6 +319,9 @@ class ExecWidget(QWidget):
         self._elapsed_time = []
 
     def end(self):
+        # Stop flush timer to prevent crashes during cleanup
+        if self._flush_timer:
+            self._flush_timer.stop()
         self.stop_process()
 
     def reset(self):
@@ -463,37 +468,39 @@ class ExecWidget(QWidget):
 
     def _flush_output_buffer(self):
         """버퍼에 쌓인 출력을 GUI에 한 번에 추가 (GUI 락 방지)"""
-        current_view = self.get_current_view() - 1
-        if current_view < 0:
-            return
+        try:
+            # 위젯 유효성 검사
+            if not self._output_view or not self._output_view.isVisible():
+                return
 
-        chunks = self._output_buffer.get(current_view, [])
-        if not chunks:
-            return
+            current_view = self.get_current_view() - 1
+            if current_view < 0:
+                return
 
-        # 버퍼 클리어
-        self._output_buffer[current_view] = []
+            chunks = self._output_buffer.get(current_view, [])
+            if not chunks:
+                return
 
-        # 청크들을 한 번에 합침 (join은 O(n)으로 효율적)
-        text = ''.join(chunks)
-        if not text:
-            return
+            # 청크들을 한 번에 합침 (join은 O(n)으로 효율적)
+            text = ''.join(chunks)
 
-        # GUI 업데이트 일시 중지
-        self._output_view.setUpdatesEnabled(False)
+            # 버퍼 클리어
+            self._output_buffer[current_view] = []
 
-        # 텍스트 추가
-        cursor = self._output_view.textCursor()
-        cursor.movePosition(QTextCursor.MoveOperation.End)
-        cursor.insertText(text)
+            if not text:
+                return
 
-        # GUI 업데이트 재개
-        self._output_view.setUpdatesEnabled(True)
+            # 텍스트 추가
+            self._output_view.moveCursor(QTextCursor.MoveOperation.End)
+            self._output_view.insertPlainText(text)
 
-        # 트래킹 중이면 스크롤
-        if self._is_tracking:
-            scrollbar = self._output_view.verticalScrollBar()
-            scrollbar.setValue(scrollbar.maximum())
+            # 트래킹 중이면 스크롤
+            if self._is_tracking:
+                scrollbar = self._output_view.verticalScrollBar()
+                scrollbar.setValue(scrollbar.maximum())
+        except (RuntimeError, AttributeError):
+            # 위젯이 삭제된 경우 무시
+            pass
 
     def set_text(self, text='', index=0):
         if index == 0:
@@ -646,6 +653,9 @@ class ExecWidget(QWidget):
 
         self._start_time[proc_idx] = time.time()
 
+        # Store CPU for async assignment when process starts running
+        self._pending_cpu_assign[proc_idx] = get_cpu
+
         split_cmd = self._procs[proc_idx].splitCommand(_cmd)
         if len(split_cmd) == 1:
             self._procs[proc_idx].start(split_cmd[0])
@@ -655,22 +665,19 @@ class ExecWidget(QWidget):
             self._stopped_proc(proc_idx, f'There is no command: {_cmd}')
             return False
 
-        # State: Starting
-        cpu_id = get_cpu
-        pid = -1  # Will be set after process starts
-        self.sig_proc_status.emit(proc_idx, cpu_id, pid, 'Starting')
-
-        if self._procs[proc_idx].waitForStarted(5000):
-            # State: Running
-            pid = self._procs[proc_idx].processId()
-            assign_cpu(pid, get_cpu)
-            self.sig_proc_status.emit(proc_idx, cpu_id, pid, 'Running')
-            return True
-        else:
-            self._stopped_proc(proc_idx, f'Not an executable file or command, or not found: {split_cmd[0]}')
-            return False
+        # State: Starting (CPU assignment happens in _changed_state when Running)
+        self.sig_proc_status.emit(proc_idx, get_cpu, -1, 'Starting')
+        return True
 
     def _stopped_proc(self, proc_idx, msg='Stopped'):
+        # Disconnect signals before setting to None to prevent race conditions
+        proc = self._procs[proc_idx]
+        if proc is not None:
+            try:
+                proc.readyReadStandardOutput.disconnect()
+                proc.readyReadStandardError.disconnect()
+            except (RuntimeError, TypeError):
+                pass
         self._procs[proc_idx] = None
 
         self._procs_state[proc_idx] = QProcess.ProcessState.NotRunning
@@ -685,19 +692,39 @@ class ExecWidget(QWidget):
             self._run_restore_ui()
 
     def _get_message_output(self, proc_idx):
-        _message = bytes(self._procs[proc_idx].readAllStandardOutput()).decode('utf-8', errors='replace')
-        if _message:
-            self.add_message_output(_message, proc_idx)
+        try:
+            proc = self._procs[proc_idx]
+            if proc is None:
+                return
+            _message = bytes(proc.readAllStandardOutput()).decode('utf-8', errors='replace')
+            if _message:
+                self.add_message_output(_message, proc_idx)
+        except (RuntimeError, IndexError, AttributeError):
+            pass
 
     def _get_message_error(self, proc_idx):
-        _message = bytes(self._procs[proc_idx].readAllStandardError()).decode('utf-8', errors='replace')
-        if _message:
-            self.add_message_error(_message, proc_idx)
+        try:
+            proc = self._procs[proc_idx]
+            if proc is None:
+                return
+            _message = bytes(proc.readAllStandardError()).decode('utf-8', errors='replace')
+            if _message:
+                self.add_message_error(_message, proc_idx)
+        except (RuntimeError, IndexError, AttributeError):
+            pass
 
     def _get_finished(self, proc_idx, exit_code, *args):
         is_next = False
         is_stopped = False
 
+        # Disconnect signals before setting to None to prevent race conditions
+        proc = self._procs[proc_idx]
+        if proc is not None:
+            try:
+                proc.readyReadStandardOutput.disconnect()
+                proc.readyReadStandardError.disconnect()
+            except (RuntimeError, TypeError):
+                pass
         self._procs[proc_idx] = None
 
         if exit_code == 0:
@@ -775,6 +802,19 @@ class ExecWidget(QWidget):
 
     def _changed_state(self, proc_idx, state):
         self._procs_state[proc_idx] = state
+
+        # Async CPU assignment when process starts running
+        if state == QProcess.ProcessState.Running:
+            cpu_id = self._pending_cpu_assign.pop(proc_idx, None)
+            if cpu_id is not None:
+                try:
+                    proc = self._procs[proc_idx]
+                    if proc is not None:
+                        pid = proc.processId()
+                        assign_cpu(pid, cpu_id)
+                        self.sig_proc_status.emit(proc_idx, cpu_id, pid, 'Running')
+                except (RuntimeError, AttributeError):
+                    pass
 
         self.show_process_state(proc_idx)
 

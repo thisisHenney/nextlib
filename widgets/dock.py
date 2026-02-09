@@ -174,7 +174,8 @@ class DockWidget(QObject):
     def show_dock(self, number: int):
         dock_info = self.docks.get(number)
         if dock_info and not dock_info.dock.isVisible():
-            self.dock_manager.addDockWidget(dock_info.position, dock_info.dock)
+            dock_area = convert_to_dock_area(dock_info.position)
+            self.dock_manager.addDockWidget(dock_area, dock_info.dock)
             dock_info.dock.show()
             dock_info.show_state = True
 

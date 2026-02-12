@@ -670,14 +670,17 @@ class ExecWidget(QWidget):
         return True
 
     def _stopped_proc(self, proc_idx, msg='Stopped'):
-        # Disconnect signals before setting to None to prevent race conditions
+        # Disconnect ALL signals and schedule safe deletion
         proc = self._procs[proc_idx]
         if proc is not None:
             try:
                 proc.readyReadStandardOutput.disconnect()
                 proc.readyReadStandardError.disconnect()
+                proc.stateChanged.disconnect()
+                proc.finished.disconnect()
             except (RuntimeError, TypeError):
                 pass
+            proc.deleteLater()
         self._procs[proc_idx] = None
 
         self._procs_state[proc_idx] = QProcess.ProcessState.NotRunning
@@ -717,14 +720,17 @@ class ExecWidget(QWidget):
         is_next = False
         is_stopped = False
 
-        # Disconnect signals before setting to None to prevent race conditions
+        # Disconnect ALL signals and schedule safe deletion
         proc = self._procs[proc_idx]
         if proc is not None:
             try:
                 proc.readyReadStandardOutput.disconnect()
                 proc.readyReadStandardError.disconnect()
+                proc.stateChanged.disconnect()
+                proc.finished.disconnect()
             except (RuntimeError, TypeError):
                 pass
+            proc.deleteLater()
         self._procs[proc_idx] = None
 
         if exit_code == 0:
@@ -813,7 +819,7 @@ class ExecWidget(QWidget):
                         pid = proc.processId()
                         assign_cpu(pid, cpu_id)
                         self.sig_proc_status.emit(proc_idx, cpu_id, pid, 'Running')
-                except (RuntimeError, AttributeError):
+                except Exception:
                     pass
 
         self.show_process_state(proc_idx)

@@ -145,7 +145,7 @@ def assign_cpu(pid: int = None, cpu_num: int = 0) -> bool:  # CPU를 고정되�
         else:
             return False
         return True
-    except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError):
+    except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError, OSError):
         return False
 
 

@@ -307,6 +307,8 @@ class VtkWidgetBase(QMainWindow):
         self._clip_normal = None  # 현재 클립 방향
         self._clip_mode = "off"  # 현재 클립 모드
         self._clip_position = 50  # 현재 클립 위치 (0-100)
+        self._clip_invert = False  # 클립 방향 반전
+        self._clip_custom_normal = (0.0, 0.0, 1.0)  # 커스텀 법선 벡터
         self._clip_preview = False  # 미리보기 모드
         self._clip_preview_actor = None  # 미리보기 평면 액터
         self._current_view_style = "surface with edge"  # 현재 뷰 스타일
@@ -458,6 +460,11 @@ class VtkWidgetBase(QMainWindow):
 
         # 클립 액터에도 스타일 적용
         self._apply_style_to_clip_actors(style)
+
+        # 선택이 활성화된 경우 페이드 상태 복원
+        if self.obj_manager._selected_ids:
+            self.obj_manager._update_selection_visual()
+
         self.render()
 
     def _on_ground_plane_changed(self, plane: str):
@@ -496,6 +503,8 @@ class VtkWidgetBase(QMainWindow):
             normal = (0, 1, 0)
         elif mode == "z":
             normal = (0, 0, 1)
+        elif mode == "custom":
+            normal = self._clip_custom_normal
         else:
             return
 
@@ -635,10 +644,13 @@ class VtkWidgetBase(QMainWindow):
                 clipper = vtkClipPolyData()
                 clipper.SetInputData(input_data)
                 clipper.SetClipFunction(self._clip_plane)
+                if self._clip_invert:
+                    clipper.InsideOutOn()
                 clipper.Update()
 
                 clip_mapper = vtkPolyDataMapper()
                 clip_mapper.SetInputConnection(clipper.GetOutputPort())
+                clip_mapper.ScalarVisibilityOff()  # LUT 레인보우 색상 방지
 
                 clip_actor = vtkActor()
                 clip_actor.SetMapper(clip_mapper)
@@ -651,27 +663,34 @@ class VtkWidgetBase(QMainWindow):
                 if obj.actor.GetUserMatrix():
                     clip_actor.SetUserMatrix(obj.actor.GetUserMatrix())
 
-                # 클립된 객체 스타일 설정 (원본 색상 + 현재 뷰 스타일)
-                orig_prop = obj.actor.GetProperty()
-                prop = clip_actor.GetProperty()
-                prop.SetColor(orig_prop.GetColor())
-
                 # 현재 뷰 스타일 적용
+                from .core.object_manager import ObjectManager
+                _STYLE_COLOR = ObjectManager._STYLE_COLOR
+                orig_color = tuple(c / 255.0 for c in obj.color)
+                prop = clip_actor.GetProperty()
+
                 style = self._current_view_style
                 if style == "wireframe":
                     prop.SetRepresentationToWireframe()
                     prop.EdgeVisibilityOff()
+                    prop.SetColor(_STYLE_COLOR)
+                    prop.SetOpacity(1.0)
                 elif style == "surface":
                     prop.SetRepresentationToSurface()
                     prop.EdgeVisibilityOff()
+                    prop.SetColor(orig_color)
+                    prop.SetOpacity(1.0)
                 elif style == "surface with edge":
                     prop.SetRepresentationToSurface()
                     prop.EdgeVisibilityOn()
-                    prop.SetEdgeColor(0.3, 0.3, 0.35)  # Fusion 360 스타일
+                    prop.SetEdgeColor(0.12, 0.15, 0.25)  # 다크 네이비 엣지
+                    prop.SetColor(_STYLE_COLOR)
+                    prop.SetOpacity(1.0)
                 elif style == "transparent":
                     prop.SetRepresentationToSurface()
                     prop.EdgeVisibilityOff()
                     prop.SetOpacity(0.5)
+                    prop.SetColor(orig_color)
 
                 self.renderer.AddActor(clip_actor)
                 self._clip_actors[obj.id] = clip_actor
@@ -777,23 +796,35 @@ class VtkWidgetBase(QMainWindow):
         if not self._clip_actors:
             return
 
-        for actor in self._clip_actors.values():
+        from .core.object_manager import ObjectManager
+        _STYLE_COLOR = ObjectManager._STYLE_COLOR
+
+        for obj_id, actor in self._clip_actors.items():
             prop = actor.GetProperty()
+            obj = self.obj_manager.get(obj_id)
+            orig_color = tuple(c / 255.0 for c in obj.color) if obj else (0.6, 0.65, 0.7)
 
             if style == "wireframe":
                 prop.SetRepresentationToWireframe()
                 prop.EdgeVisibilityOff()
+                prop.SetColor(_STYLE_COLOR)
+                prop.SetOpacity(1.0)
             elif style == "surface":
                 prop.SetRepresentationToSurface()
                 prop.EdgeVisibilityOff()
+                prop.SetColor(orig_color)
+                prop.SetOpacity(1.0)
             elif style == "surface with edge":
                 prop.SetRepresentationToSurface()
                 prop.EdgeVisibilityOn()
-                prop.SetEdgeColor(0.1, 0.1, 0.4)
+                prop.SetEdgeColor(0.12, 0.15, 0.25)  # 다크 네이비 엣지
+                prop.SetColor(_STYLE_COLOR)
+                prop.SetOpacity(1.0)
             elif style == "transparent":
                 prop.SetRepresentationToSurface()
                 prop.EdgeVisibilityOff()
                 prop.SetOpacity(0.5)
+                prop.SetColor(orig_color)
 
     def _on_select_all(self):
         """전체 선택"""
@@ -809,7 +840,10 @@ class VtkWidgetBase(QMainWindow):
         self.selection_changed.emit(info)
 
     def _on_object_added(self, obj_id: int, name: str):
-        """객체 추가 이벤트 - 바닥 평면 자동 업데이트"""
+        """객체 추가 이벤트 - 현재 view style 적용 + 바닥 평면 자동 업데이트"""
+        obj = self.obj_manager.get(obj_id)
+        if obj:
+            self.obj_manager._apply_style(obj, self._current_view_style)
         self.update_ground_plane()
 
     # ===== 공개 API =====
@@ -899,7 +933,7 @@ class VtkWidgetBase(QMainWindow):
             widget.set_clip_mode("off")  # 클립 해제
         """
         mode = mode.lower()
-        if mode not in ("off", "x", "y", "z"):
+        if mode not in ("off", "x", "y", "z", "custom"):
             return
         self._clip_preview = preview
         self._on_clip_mode_changed(mode)
@@ -948,6 +982,25 @@ class VtkWidgetBase(QMainWindow):
         self._clip_preview = True
         self._show_preview_plane()
         self.render()
+
+    def set_clip_invert(self, invert: bool):
+        self._clip_invert = invert
+        if self._clip_mode != "off" and not self._clip_preview:
+            self._clear_clip()
+            self._restore_original_visibility()
+            self._apply_clip()
+            self.render()
+
+    def set_clip_custom_normal(self, nx: float, ny: float, nz: float):
+        """커스텀 클립 법선 벡터 설정 (자동 정규화)"""
+        import math
+        length = math.sqrt(nx * nx + ny * ny + nz * nz)
+        if length < 1e-6:
+            return
+        self._clip_custom_normal = (nx / length, ny / length, nz / length)
+        if self._clip_mode == "custom":
+            self._clip_normal = self._clip_custom_normal
+            self._on_clip_mode_changed("custom")
 
     def get_clip_mode(self) -> str:
         """현재 클립 모드 반환

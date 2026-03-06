@@ -52,6 +52,7 @@ class ObjectManager(QObject):
         self._selected_ids: Set[int] = set()
         self._outline_actors: Dict[int, vtkActor] = {}
         self._bbox_actor: Optional[vtkActor] = None
+        self._current_style: str = "surface with edge"  # 현재 뷰 스타일 추적
 
         # 선택 시각화 옵션
         self._show_individual_outlines = True  # 개별 객체 outline 표시 여부
@@ -167,11 +168,16 @@ class ObjectManager(QObject):
         if not name:
             name = f"object_{obj_id}"
 
+        # 액터의 현재 색상을 읽어 ObjectData에 저장 (MeshLoader가 설정한 색상 보존)
+        r, g, b = actor.GetProperty().GetColor()
+        actual_color = (int(r * 255), int(g * 255), int(b * 255))
+
         obj = ObjectData(
             id=obj_id,
             actor=actor,
             name=name,
-            group=group
+            group=group,
+            color=actual_color
         )
         self._objects[obj_id] = obj
 
@@ -179,7 +185,7 @@ class ObjectManager(QObject):
         prop = actor.GetProperty()
         prop.SetRepresentationToSurface()
         prop.EdgeVisibilityOn()
-        prop.SetEdgeColor(0.3, 0.3, 0.35)  # Fusion 360 스타일 다크 그레이 엣지
+        prop.SetEdgeColor(0.12, 0.15, 0.25)  # 다크 네이비 엣지
 
         self.renderer.AddActor(actor)
 
@@ -302,11 +308,11 @@ class ObjectManager(QObject):
                 continue
 
             prop = obj.actor.GetProperty()
-            norm_color = tuple(c / 255.0 for c in obj.color)
+            display_color = self._get_display_color(obj)
 
-            prop.SetOpacity(0.25)
+            prop.SetOpacity(0.12)
             prop.SetEdgeColor(0.5, 0.5, 0.55)  # Fusion 360 스타일 연한 그레이 엣지
-            faded_color = tuple(min(1.0, c * 0.3 + 0.7) for c in norm_color)
+            faded_color = tuple(min(1.0, c * 0.3 + 0.7) for c in display_color)
             prop.SetColor(faded_color)
 
         self._render()
@@ -405,35 +411,55 @@ class ObjectManager(QObject):
 
     # ===== 스타일 적용 =====
 
+    # wireframe / surface-with-edge 기본 색상 (스틸 블루 - CAD 표준 스타일)
+    _STYLE_COLOR = (0.28, 0.46, 0.70)
+    # 선택 강조 색상 (사이언 - 스틸 블루와 대비가 명확하고 CAD 표준 선택색)
+    _SELECT_COLOR = (0.0, 0.82, 0.95)
+
+    def _get_display_color(self, obj: ObjectData) -> tuple:
+        """현재 스타일에 맞는 표시 색상 반환"""
+        if self._current_style in ("wireframe", "surface with edge"):
+            return self._STYLE_COLOR
+        return tuple(c / 255.0 for c in obj.color)
+
     def _apply_style(self, obj: ObjectData, style: str):
         """객체에 뷰 스타일 적용"""
         style = style.lower()
+        self._current_style = style
         prop = obj.actor.GetProperty()
+        orig_color = tuple(c / 255.0 for c in obj.color)
 
         if style == "wireframe":
             prop.SetRepresentationToWireframe()
             prop.EdgeVisibilityOff()
+            prop.SetColor(self._STYLE_COLOR)
+            prop.SetOpacity(1.0)
 
         elif style == "surface":
             prop.SetRepresentationToSurface()
             prop.EdgeVisibilityOff()
             prop.SetOpacity(1.0)
+            prop.SetColor(orig_color)
 
         elif style == "surface with edge":
             prop.SetRepresentationToSurface()
             prop.EdgeVisibilityOn()
+            prop.SetEdgeColor(0.12, 0.15, 0.25)  # 다크 네이비 엣지
             prop.SetLineWidth(1.2)
+            prop.SetColor(self._STYLE_COLOR)
+            prop.SetOpacity(1.0)
 
         elif style in ("transparent", "transparent surface"):
             prop.SetRepresentationToSurface()
             prop.EdgeVisibilityOff()
             prop.SetOpacity(0.4)
+            prop.SetColor(orig_color)
 
     def _effect_highlight(self, obj: ObjectData):
         """하이라이트 효과"""
         prop = obj.actor.GetProperty()
         prop.EdgeVisibilityOn()
-        prop.SetEdgeColor(1, 1, 0)
+        prop.SetEdgeColor(*self._SELECT_COLOR)
         prop.SetLineWidth(2.5)
 
     # ===== 선택 시각화 =====
@@ -463,38 +489,41 @@ class ObjectManager(QObject):
                     continue
 
                 prop = obj.actor.GetProperty()
-                # RGB 0-255를 0-1로 변환
-                norm_color = tuple(c / 255.0 for c in obj.color)
+                display_color = self._get_display_color(obj)
 
                 if obj.id in self._selected_ids:
-                    # 선택된 객체: 원래 상태로 복원
-                    prop.SetOpacity(1.0)
-                    prop.SetEdgeColor(0.3, 0.3, 0.35)  # Fusion 360 스타일 다크 그레이 엣지
-                    prop.SetColor(norm_color)  # 원래 색상
+                    # 선택된 객체: 현재 스타일에 맞는 투명도 및 색상 적용
+                    if self._current_style in ("transparent", "transparent surface"):
+                        prop.SetOpacity(0.55)  # 비선택(0.12)보다 불투명, 완전 불투명보단 투명
+                        prop.SetColor(display_color)
+                    elif self._current_style == "wireframe":
+                        prop.SetOpacity(1.0)
+                        prop.SetColor(self._SELECT_COLOR)  # 와이어 색으로 선택 강조
+                    else:
+                        prop.SetOpacity(1.0)
+                        prop.SetColor(display_color)
+                    prop.SetEdgeColor(0.12, 0.15, 0.25)  # 다크 네이비 엣지
                     # 개별 outline 표시 옵션이 켜져 있을 때만 추가
                     if self._show_individual_outlines:
                         self._add_outline(obj)
                 else:
                     # 선택되지 않은 객체: 반투명 + 연한 그레이 톤
-                    prop.SetOpacity(0.35)
+                    prop.SetOpacity(0.12)
                     prop.SetEdgeColor(0.5, 0.5, 0.55)  # Fusion 360 스타일 연한 그레이 엣지
-                    # 면 색상: 연한 그레이 톤 (배경과 구분되는 색)
                     faded_color = (0.7, 0.72, 0.75)  # 연한 그레이
                     prop.SetColor(faded_color)
 
             # 선택된 객체들의 bbox 표시
             self._add_selection_bbox()
         else:
-            # 선택이 없으면 모든 객체 원래 상태로 복원
+            # 선택이 없으면 모든 객체 현재 스타일 색상으로 복원
             for obj in self._objects.values():
                 if obj.removed:
                     continue
                 prop = obj.actor.GetProperty()
                 prop.SetOpacity(obj.opacity)
-                prop.SetEdgeColor(0.3, 0.3, 0.35)  # Fusion 360 스타일 다크 그레이 엣지
-                # RGB 0-255를 0-1로 변환
-                norm_color = tuple(c / 255.0 for c in obj.color)
-                prop.SetColor(norm_color)  # 원래 색상
+                prop.SetEdgeColor(0.12, 0.15, 0.25)  # 다크 네이비 엣지
+                prop.SetColor(self._get_display_color(obj))
 
         # 시그널 발신
         info = {
@@ -528,7 +557,7 @@ class ObjectManager(QObject):
 
             o_actor = vtkActor()
             o_actor.SetMapper(o_mapper)
-            o_actor.GetProperty().SetColor(1.0, 0.0, 0.0)
+            o_actor.GetProperty().SetColor(*self._SELECT_COLOR)
             o_actor.GetProperty().SetLineWidth(2.0)
 
             # 원본 객체의 변환 정보 복사
@@ -588,8 +617,8 @@ class ObjectManager(QObject):
 
         bbox_actor = vtkActor()
         bbox_actor.SetMapper(mapper)
-        bbox_actor.GetProperty().SetColor(1, 0, 0)
-        bbox_actor.GetProperty().SetOpacity(0.25)
+        bbox_actor.GetProperty().SetColor(*self._SELECT_COLOR)
+        bbox_actor.GetProperty().SetOpacity(0.6)
         bbox_actor.GetProperty().SetRepresentationToWireframe()
         bbox_actor.GetProperty().SetLineWidth(2)
 

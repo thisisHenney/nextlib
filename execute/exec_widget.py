@@ -165,7 +165,8 @@ class ExecWidget(QWidget):
     def get_messages(self, index):
         if index >= len(self._all_msgs):
             return ''
-        return self._all_msgs[index]
+        msgs = self._all_msgs[index]
+        return ''.join(msgs) if isinstance(msgs, list) else msgs
 
     def _initialize(self):
         self._init_edit()
@@ -200,7 +201,7 @@ class ExecWidget(QWidget):
 
         elif cur_view == 1:
             cur_proc = self.get_current_view() - 1
-            self._all_msgs[cur_proc] = ''
+            self._all_msgs[cur_proc] = []
             self._output_view.clear()
             self.add_message_output('######### cleared log #########\n',
                                     cur_proc, record=False)
@@ -452,7 +453,10 @@ class ExecWidget(QWidget):
 
     def add_message_output(self, text='', proc_idx=0, record=True):
         if record:
-            self._all_msgs[proc_idx] += text
+            if isinstance(self._all_msgs[proc_idx], list):
+                self._all_msgs[proc_idx].append(text)
+            else:
+                self._all_msgs[proc_idx] += text
         # 버퍼에 추가 (리스트로 관리하여 문자열 연결 비용 제거)
         if proc_idx not in self._output_buffer:
             self._output_buffer[proc_idx] = []
@@ -460,7 +464,10 @@ class ExecWidget(QWidget):
 
     def add_message_error(self, text='', proc_idx=0, record=True):
         if record:
-            self._all_msgs[proc_idx] += text
+            if isinstance(self._all_msgs[proc_idx], list):
+                self._all_msgs[proc_idx].append(text)
+            else:
+                self._all_msgs[proc_idx] += text
         # 버퍼에 추가 (리스트로 관리)
         if proc_idx not in self._output_buffer:
             self._output_buffer[proc_idx] = []
@@ -498,8 +505,8 @@ class ExecWidget(QWidget):
             if self._is_tracking:
                 scrollbar = self._output_view.verticalScrollBar()
                 scrollbar.setValue(scrollbar.maximum())
-        except (RuntimeError, AttributeError):
-            # 위젯이 삭제된 경우 무시
+        except BaseException:
+            # 위젯 삭제, 버퍼 오류, 또는 종료 시 KeyboardInterrupt 무시
             pass
 
     def set_text(self, text='', index=0):
@@ -543,7 +550,10 @@ class ExecWidget(QWidget):
             if not isinstance(commands, list):
                 commands = [commands]
             for c in commands:
-                self._commands.append(c)
+                if isinstance(c, tuple) and len(c) == 2:
+                    self._commands.append(c)
+                else:
+                    self._commands.append((c, c))
 
         if not self._commands:
             self.add_log_error(0, 'There are no commands')
@@ -574,7 +584,7 @@ class ExecWidget(QWidget):
             self._funcs_get_message_error.append(create_func_args(self._get_message_error, proc_idx))
 
             self._procs_state.append(QProcess.ProcessState.NotRunning)
-            self._all_msgs.append('')
+            self._all_msgs.append([])
             self._start_time.append(0)
             self._elapsed_time.append(0)
 
@@ -593,8 +603,8 @@ class ExecWidget(QWidget):
 
             self._procs.append(new_proc)
 
-            _cmd = self._commands.pop(0)
-            self._procs_cmd.append([self._cur_count, _cmd])
+            _cmd, _label = self._commands.pop(0)
+            self._procs_cmd.append([self._cur_count, _cmd, _label])
             self._cur_count += 1
 
             self._thread_find_cpus.append(None)
@@ -629,8 +639,9 @@ class ExecWidget(QWidget):
         self.sig_proc_status.emit(proc_idx, -1, -1, 'Waiting')
 
         _cmd = self._procs_cmd[proc_idx][1]
+        _label = self._procs_cmd[proc_idx][2] if len(self._procs_cmd[proc_idx]) > 2 else _cmd
         if self._show_command:
-            self.add_log_command(self._procs_cmd[proc_idx][0], _cmd)
+            self.add_log_command(self._procs_cmd[proc_idx][0], _label)
         else:
             if self._task_name:
                 self.add_log_command(self._procs_cmd[proc_idx][0], self._task_name)
@@ -733,7 +744,11 @@ class ExecWidget(QWidget):
             proc.deleteLater()
         self._procs[proc_idx] = None
 
-        if exit_code == 0:
+        # Check if process was killed (CrashExit) or user-stopped
+        exit_status = args[0] if args else QProcess.ExitStatus.NormalExit
+        was_killed = (exit_status == QProcess.ExitStatus.CrashExit) or self._stop_all_proc
+
+        if exit_code == 0 and not was_killed:
             self.add_log_end(self._procs_cmd[proc_idx][0])
             if self._commands:
                 self._elapsed_time[proc_idx] = time.time() - self._start_time[proc_idx]
@@ -800,8 +815,8 @@ class ExecWidget(QWidget):
         if self._added_env:
             new_proc.setProcessEnvironment(self._added_env)
 
-        _cmd = self._commands.pop(0)
-        self._procs_cmd[proc_idx] = [self._cur_count, _cmd]
+        _cmd, _label = self._commands.pop(0)
+        self._procs_cmd[proc_idx] = [self._cur_count, _cmd, _label]
         self._cur_count += 1
 
         self._get_usable_procs(proc_idx)

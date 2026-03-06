@@ -42,14 +42,8 @@ class SingleInstance(QObject):
             True: 잠금 성공 (첫 번째 인스턴스)
             False: 잠금 실패 (이미 실행 중)
         """
-        # 기존 인스턴스가 있는지 확인
-        socket = QLocalSocket()
-        socket.connectToServer(self._app_key)
-        if socket.waitForConnected(500):
-            # 연결 성공 → 이미 실행 중
-            socket.disconnectFromServer()
+        if self._is_running():
             return False
-        socket.close()
 
         # 서버 시작 (이 프로세스가 첫 번째 인스턴스)
         self._server = QLocalServer(self)
@@ -60,6 +54,30 @@ class SingleInstance(QObject):
             return False
 
         return True
+
+    def _is_running(self) -> bool:
+        socket = QLocalSocket()
+        socket.connectToServer(self._app_key)
+        connected = socket.waitForConnected(200)
+        if connected:
+            socket.disconnectFromServer()
+            socket.close()
+            return True
+        socket.close()
+
+        # 연결 실패했더라도 종료 중인 인스턴스가 있을 수 있으므로 재확인
+        import time
+        time.sleep(0.15)
+
+        socket2 = QLocalSocket()
+        socket2.connectToServer(self._app_key)
+        connected2 = socket2.waitForConnected(200)
+        if connected2:
+            socket2.disconnectFromServer()
+            socket2.close()
+            return True
+        socket2.close()
+        return False
 
     def unlock(self):
         """잠금 해제."""

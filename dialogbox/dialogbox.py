@@ -1,5 +1,6 @@
 from pathlib import Path
 from PySide6.QtWidgets import QFileDialog
+from PySide6.QtCore import Qt
 
 # Filter Option
 # (ex) ext: "CAD Files (*.stp *.step);;STL Files (*.stl);;All Files (*)"
@@ -15,7 +16,9 @@ class DirDialogBox:
         dlg.setWindowTitle(title)
         dlg.setFileMode(QFileDialog.Directory)
         dlg.setOption(QFileDialog.ShowDirsOnly, True)
+        dlg.setOption(QFileDialog.DontUseNativeDialog, True)
         dlg.setDirectory(str(path))
+        dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
 
         if dlg.exec():
             return dlg.selectedFiles()[0]
@@ -32,7 +35,9 @@ class DirDialogBox:
         dlg.setFileMode(QFileDialog.Directory)
         dlg.setAcceptMode(QFileDialog.AcceptSave)
         dlg.setOption(QFileDialog.ShowDirsOnly, True)
+        dlg.setOption(QFileDialog.DontUseNativeDialog, True)
         dlg.setDirectory(str(path))
+        dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
 
         if dlg.exec():
             return dlg.selectedFiles()[0]
@@ -51,7 +56,9 @@ class FileDialogBox:
         dlg.setWindowTitle(title)
         dlg.setNameFilter(filters)
         dlg.setFileMode(QFileDialog.ExistingFile)
+        dlg.setOption(QFileDialog.DontUseNativeDialog, True)
         dlg.setDirectory(str(path))
+        dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
 
         if dlg.exec():
             return dlg.selectedFiles()[0]
@@ -67,7 +74,9 @@ class FileDialogBox:
         dlg.setWindowTitle(title)
         dlg.setNameFilter(filters)
         dlg.setFileMode(QFileDialog.ExistingFiles)
+        dlg.setOption(QFileDialog.DontUseNativeDialog, True)
         dlg.setDirectory(str(path))
+        dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
 
         if dlg.exec():
             return [p for p in dlg.selectedFiles()]
@@ -84,7 +93,9 @@ class FileDialogBox:
         dlg.setWindowTitle(title)
         dlg.setAcceptMode(QFileDialog.AcceptSave)
         dlg.setNameFilter(filters)
+        dlg.setOption(QFileDialog.DontUseNativeDialog, True)
         dlg.setDirectory(str(path))
+        dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
 
         if dlg.exec():
             return dlg.selectedFiles()[0]

@@ -18,6 +18,8 @@ from vtkmodules.vtkInteractionWidgets import vtkBoxWidget2, vtkBoxRepresentation
 from vtkmodules.vtkFiltersModeling import vtkOutlineFilter
 from vtkmodules.vtkRenderingCore import vtkActor, vtkPolyDataMapper
 from vtkmodules.vtkCommonTransforms import vtkTransform
+from vtkmodules.vtkCommonDataModel import vtkPolyData, vtkCellArray
+from vtkmodules.vtkCommonCore import vtkPoints
 
 if TYPE_CHECKING:
     from ..vtk_widget_base import VtkWidgetBase
@@ -47,11 +49,28 @@ class PointProbeTool(QObject):
         self._rep = vtkBoxRepresentation()
         self._rep.SetPlaceFactor(1.0)
 
+        # 외곽 박스만 숨기고 핸들은 유지
+        self._rep.SetInsideOut(True)
+        self._rep.OutlineFaceWiresOff()
+        self._rep.OutlineCursorWiresOff()
+        self._rep.GetOutlineProperty().SetOpacity(0.0)
+        self._rep.GetSelectedOutlineProperty().SetOpacity(0.0)
+
         self._box_widget = vtkBoxWidget2()
         self._box_widget.SetRepresentation(self._rep)
         self._box_widget.SetInteractor(self._interactor)
         self._box_widget.Off()
         self._box_widget.AddObserver("InteractionEvent", self._on_interact)
+
+        # 별도 중심 축 커서 (3축 라인)
+        self._cursor_mapper = vtkPolyDataMapper()
+        self._cursor_actor = vtkActor()
+        self._cursor_actor.SetMapper(self._cursor_mapper)
+        self._cursor_actor.GetProperty().SetColor(1.0, 0.2, 0.2)
+        self._cursor_actor.GetProperty().SetLineWidth(2)
+        self._cursor_actor.SetVisibility(False)
+        self._cursor_actor.SetPickable(False)
+        self._renderer.AddActor(self._cursor_actor)
 
         self._visible = False
 
@@ -88,6 +107,34 @@ class PointProbeTool(QObject):
 
         self._rep.PlaceWidget(bounds)
 
+    def _update_cursor_from_bounds(self, bounds):
+        """박스 bounds에 맞춰 중심 축 커서 업데이트 (새 polydata 생성)"""
+        xmin, xmax, ymin, ymax, zmin, zmax = bounds
+        cx = (xmin + xmax) / 2
+        cy = (ymin + ymax) / 2
+        cz = (zmin + zmax) / 2
+
+        points = vtkPoints()
+        points.InsertNextPoint(xmin, cy, cz)
+        points.InsertNextPoint(xmax, cy, cz)
+        points.InsertNextPoint(cx, ymin, cz)
+        points.InsertNextPoint(cx, ymax, cz)
+        points.InsertNextPoint(cx, cy, zmin)
+        points.InsertNextPoint(cx, cy, zmax)
+
+        lines = vtkCellArray()
+        for i in range(3):
+            lines.InsertNextCell(2)
+            lines.InsertCellPoint(i * 2)
+            lines.InsertCellPoint(i * 2 + 1)
+
+        polydata = vtkPolyData()
+        polydata.SetPoints(points)
+        polydata.SetLines(lines)
+
+        self._cursor_mapper.SetInputData(polydata)
+        self._cursor_mapper.Update()
+
     def _on_interact(self, caller, event):
         """박스 인터랙션 이벤트 핸들러"""
         bounds = list(self._rep.GetBounds())
@@ -99,6 +146,9 @@ class PointProbeTool(QObject):
         self._rep.GetTransform(self._saved_transform)
         manager = self._vtk_widget.obj_manager
         self._saved_selection_ids = manager.selected_ids.copy()
+
+        # 중심 축 커서 위치 업데이트
+        self._update_cursor_from_bounds(bounds)
 
         cx = (xmin + xmax) / 2
         cy = (ymin + ymax) / 2
@@ -125,8 +175,8 @@ class PointProbeTool(QObject):
         outline_actor = vtkActor()
         outline_actor.SetMapper(outline_mapper)
 
-        # 노란색 아웃라인
-        outline_actor.GetProperty().SetColor(1.0, 1.0, 0.2)
+        from ..core.object_manager import ObjectManager
+        outline_actor.GetProperty().SetColor(*ObjectManager._SELECT_COLOR)
         outline_actor.GetProperty().SetLineWidth(3)
 
         # 원본 액터의 변환 정보 복사
@@ -171,8 +221,9 @@ class PointProbeTool(QObject):
 
             if obj_id in selected_ids:
                 # 선택된 객체: 투명하게 표시 (프로브 박스가 잘 보이도록)
+                from ..core.object_manager import ObjectManager
                 prop.SetOpacity(0.3)
-                prop.SetColor(1.0, 1.0, 0.4)
+                prop.SetColor(*ObjectManager._SELECT_COLOR)
                 self._create_outline(obj_id, actor)
             else:
                 # 비선택 객체: 더 투명하게
@@ -248,6 +299,12 @@ class PointProbeTool(QObject):
         self._apply_highlight()
 
         self._box_widget.On()
+
+        # On() 후 bounds를 읽어야 transform이 반영된 실제 위치를 얻음
+        bounds = list(self._rep.GetBounds())
+        self._update_cursor_from_bounds(bounds)
+        self._cursor_actor.SetVisibility(True)
+
         self._visible = True
         self.visibility_changed.emit(True)
 
@@ -270,6 +327,7 @@ class PointProbeTool(QObject):
             # 프로브 박스를 40% 확장
             expanded_bounds = self._expand_bounds(bounds, self._probe_scale)
             self._rep.PlaceWidget(expanded_bounds)
+            self._update_cursor_from_bounds(expanded_bounds)
             self._saved_bounds = expanded_bounds
             self._saved_selection_ids = selected_ids.copy() if selected_ids else set()
             # 새 위치에서는 회전 초기화
@@ -340,6 +398,7 @@ class PointProbeTool(QObject):
             return
 
         self._box_widget.Off()
+        self._cursor_actor.SetVisibility(False)
         self._visible = False
         self.visibility_changed.emit(False)
 
@@ -383,6 +442,7 @@ class PointProbeTool(QObject):
         self._saved_transform = None  # 회전 초기화
         self._saved_selection_ids = selected_ids.copy() if selected_ids else set()
         self._rep.PlaceWidget(expanded_bounds)
+        self._update_cursor_from_bounds(expanded_bounds)
 
         if self._visible:
             self._renderer.GetRenderWindow().Render()
@@ -404,6 +464,7 @@ class PointProbeTool(QObject):
 
         self._saved_bounds = bounds
         self._rep.PlaceWidget(bounds)
+        self._update_cursor_from_bounds(bounds)
 
         if self._visible:
             self._renderer.GetRenderWindow().Render()
@@ -435,3 +496,4 @@ class PointProbeTool(QObject):
         self.hide()
         self._box_widget.Off()
         self._box_widget.SetInteractor(None)
+        self._renderer.RemoveActor(self._cursor_actor)

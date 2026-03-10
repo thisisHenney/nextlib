@@ -181,11 +181,8 @@ class ObjectManager(QObject):
         )
         self._objects[obj_id] = obj
 
-        # 기본 스타일 적용
-        prop = actor.GetProperty()
-        prop.SetRepresentationToSurface()
-        prop.EdgeVisibilityOn()
-        prop.SetEdgeColor(0.12, 0.15, 0.25)  # 다크 네이비 엣지
+        # 현재 뷰 스타일 적용 (기본값 대신 현재 선택된 스타일로 시작)
+        self._apply_style(obj, self._current_style)
 
         self.renderer.AddActor(actor)
 
@@ -516,14 +513,11 @@ class ObjectManager(QObject):
             # 선택된 객체들의 bbox 표시
             self._add_selection_bbox()
         else:
-            # 선택이 없으면 모든 객체 현재 스타일 색상으로 복원
+            # 선택이 없으면 모든 객체 현재 스타일로 완전 복원 (Representation 포함)
             for obj in self._objects.values():
                 if obj.removed:
                     continue
-                prop = obj.actor.GetProperty()
-                prop.SetOpacity(obj.opacity)
-                prop.SetEdgeColor(0.12, 0.15, 0.25)  # 다크 네이비 엣지
-                prop.SetColor(self._get_display_color(obj))
+                self._apply_style(obj, self._current_style)
 
         # 시그널 발신
         info = {

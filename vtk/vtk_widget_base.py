@@ -124,7 +124,8 @@ class VtkWidgetBase(QMainWindow):
         progress_layout.setSpacing(8)
 
         self._progress_label = QLabel("Loading...")
-        self._progress_label.setFixedWidth(100)
+        self._progress_label.setStyleSheet("font-size: 10pt;")
+        self._progress_label.setFixedWidth(160)
         progress_layout.addWidget(self._progress_label)
 
         self._progress_bar = QProgressBar()
@@ -249,7 +250,7 @@ class VtkWidgetBase(QMainWindow):
             "surface with edge",
             "transparent",
         ])
-        self._view_combo.setCurrentText("surface with edge")
+        self._view_combo.setCurrentText("transparent")
         self._view_combo.currentTextChanged.connect(self._on_view_style_changed)
         self.toolbar.addWidget(self._view_combo)
 
@@ -307,11 +308,11 @@ class VtkWidgetBase(QMainWindow):
         self._clip_normal = None  # 현재 클립 방향
         self._clip_mode = "off"  # 현재 클립 모드
         self._clip_position = 50  # 현재 클립 위치 (0-100)
-        self._clip_invert = False  # 클립 방향 반전
+        self._clip_invert = True  # 클립 방향 반전 (기본: 반전)
         self._clip_custom_normal = (0.0, 0.0, 1.0)  # 커스텀 법선 벡터
         self._clip_preview = False  # 미리보기 모드
         self._clip_preview_actor = None  # 미리보기 평면 액터
-        self._current_view_style = "surface with edge"  # 현재 뷰 스타일
+        self._current_view_style = "transparent"  # 현재 뷰 스타일
 
     def _set_background(self):
         """배경색 설정 - Fusion 360 스타일 화이트 그라데이션"""

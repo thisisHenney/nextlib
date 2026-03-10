@@ -88,7 +88,7 @@ class OpenFOAMReader:
 
         return False
 
-    def load(self, case_path: str) -> bool:
+    def load(self, case_path: str, build_surface: bool = True) -> bool:
         """OpenFOAM 케이스를 로드합니다.
 
         Args:
@@ -146,11 +146,16 @@ class OpenFOAMReader:
             if hasattr(reader, 'CacheMeshOn'):
                 reader.CacheMeshOn()
 
-            # 모든 배열 활성화
+            # 모든 배열 활성화 (1차 Update로 배열 목록 확보 후 전체 활성화)
+            reader.Update()
             if hasattr(reader, 'EnableAllCellArrays'):
                 reader.EnableAllCellArrays()
             if hasattr(reader, 'EnableAllPointArrays'):
                 reader.EnableAllPointArrays()
+            if hasattr(reader, 'EnableAllPatchArrays'):
+                reader.EnableAllPatchArrays()
+            if hasattr(reader, 'EnableAllLagrangianArrays'):
+                reader.EnableAllLagrangianArrays()
 
             reader.Update()
             self._reader = reader
@@ -165,8 +170,9 @@ class OpenFOAMReader:
             # 필드 이름 추출
             self._extract_field_names()
 
-            # Surface polydata 생성
-            self._create_surface()
+            # Surface polydata 생성 (렌더링 목적이면 메인 스레드에서 호출 가능)
+            if build_surface:
+                self._create_surface()
 
             return True
 
@@ -185,43 +191,40 @@ class OpenFOAMReader:
                 self._time_values.append(ts_vtk.GetValue(i))
 
     def _extract_field_names(self):
-        """필드 이름들을 추출합니다."""
+        """필드 이름들을 추출합니다. CHTMultiRegion 중첩 구조 지원."""
         self._field_names = []
         if self._reader is None:
-            return
-
-        try:
-            import vtk
-        except ImportError:
             return
 
         mb = self._reader.GetOutput()
         if mb is None:
             return
 
-        it = mb.NewIterator()
-        it.UnRegister(None)
-
         fields = set()
 
-        while not it.IsDoneWithTraversal():
-            obj = it.GetCurrentDataObject()
-            if hasattr(obj, 'GetPointData') and hasattr(obj, 'GetCellData'):
-                pd = obj.GetPointData()
-                cd = obj.GetCellData()
-
+        def _collect_fields(data_obj):
+            """재귀적으로 모든 leaf 데이터셋에서 필드 이름 수집."""
+            if data_obj is None:
+                return
+            # Leaf 데이터셋: PointData / CellData 직접 접근
+            if hasattr(data_obj, 'GetPointData') and hasattr(data_obj, 'GetCellData'):
+                pd = data_obj.GetPointData()
+                cd = data_obj.GetCellData()
                 for i in range(pd.GetNumberOfArrays()):
                     name = pd.GetArrayName(i)
                     if name:
                         fields.add(name)
-
                 for i in range(cd.GetNumberOfArrays()):
                     name = cd.GetArrayName(i)
                     if name:
                         fields.add(name)
+            # CompositeDataSet: 하위 블록 재귀 순회
+            if hasattr(data_obj, 'GetNumberOfBlocks'):
+                for i in range(data_obj.GetNumberOfBlocks()):
+                    child = data_obj.GetBlock(i)
+                    _collect_fields(child)
 
-            it.GoToNextItem()
-
+        _collect_fields(mb)
         self._field_names = sorted(fields)
 
     def _create_surface(self):

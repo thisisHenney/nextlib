@@ -10,7 +10,8 @@ from PySide6.QtWidgets import (
     QProgressBar
 )
 from PySide6.QtGui import QAction, QIcon, QDoubleValidator
-from PySide6.QtCore import Signal, Qt, QThread, QObject
+from PySide6.QtCore import Signal, Qt, QObject
+from PySide6.QtWidgets import QApplication
 
 import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
@@ -32,53 +33,8 @@ ICON_DIR = RES_DIR / "res" / "icon"
 
 
 class FoamLoaderWorker(QObject):
-    """OpenFOAM 케이스 비동기 로딩 워커"""
-    finished = Signal(bool, object)  # success, foam_reader or error_msg
-    progress = Signal(str)  # status message
-
-    def __init__(self, file_path: str):
-        super().__init__()
-        self.file_path = file_path
-        self._cancelled = False
-
-    def run(self):
-        """백그라운드에서 OpenFOAM 케이스 로드"""
-        try:
-            self.progress.emit("Initializing...")
-
-            # OpenFOAMReader 사용 가능 여부 확인
-            if not OpenFOAMReader.is_available():
-                self.finished.emit(False, "vtkOpenFOAMReader not available")
-                return
-
-            # 폴더인 경우 OpenFOAM 케이스인지 확인
-            path = Path(self.file_path)
-            if path.is_dir() and not OpenFOAMReader.is_openfoam_case(path):
-                self.finished.emit(False, "Invalid OpenFOAM case")
-                return
-
-            if self._cancelled:
-                return
-
-            self.progress.emit("Loading case...")
-
-            # OpenFOAMReader로 로드
-            foam_reader = OpenFOAMReader()
-            if not foam_reader.load(self.file_path):
-                self.finished.emit(False, "Load failed")
-                return
-
-            if self._cancelled:
-                return
-
-            self.progress.emit("Processing...")
-            self.finished.emit(True, foam_reader)
-
-        except Exception as e:
-            self.finished.emit(False, str(e))
-
-    def cancel(self):
-        self._cancelled = True
+    """하위 호환성을 위해 유지 (현재는 사용 안 함)"""
+    pass
 
 
 class PostprocessWidget(QMainWindow):
@@ -117,9 +73,7 @@ class PostprocessWidget(QMainWindow):
         self.scalar_bar_widget = None
         self.scalar_bar_visible = True
 
-        # Async loader
-        self._loader_thread: QThread | None = None
-        self._loader_worker: FoamLoaderWorker | None = None
+        self._loading: bool = False
 
         self._setup_ui()
         self._setup_vtk()
@@ -160,7 +114,7 @@ class PostprocessWidget(QMainWindow):
         progress_layout.setSpacing(8)
 
         self._progress_label = QLabel("Loading...")
-        self._progress_label.setStyleSheet("color: #333; font-weight: bold;")
+        self._progress_label.setStyleSheet("color: #333; font-size: 10pt;")
         progress_layout.addWidget(self._progress_label)
 
         self._progress_bar = QProgressBar()
@@ -406,58 +360,46 @@ class PostprocessWidget(QMainWindow):
             )
             return
 
-        # 이전 로더가 실행 중이면 취소
-        self._cancel_loading()
+        # 중복 로딩 방지
+        if self._loading:
+            return
+        self._loading = True
 
-        # 프로그레스 바 표시
+        # 인-위젯 프로그레스 바 표시 + 대기 커서
         self.show_progress("Loading case...")
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        QApplication.processEvents()
 
-        # 비동기 로딩 시작
-        self._loader_thread = QThread()
-        self._loader_worker = FoamLoaderWorker(file_path)
-        self._loader_worker.moveToThread(self._loader_thread)
-
-        # 시그널 연결
-        self._loader_thread.started.connect(self._loader_worker.run)
-        self._loader_worker.progress.connect(self.update_progress)
-        self._loader_worker.finished.connect(self._on_foam_loaded)
-        self._loader_worker.finished.connect(self._loader_thread.quit)
-        self._loader_worker.finished.connect(self._loader_worker.deleteLater)
-        self._loader_thread.finished.connect(self._loader_thread.deleteLater)
-
-        # 로드 시작
-        self._loader_thread.start()
-
-    def _cancel_loading(self):
-        """진행 중인 로딩 취소"""
-        if self._loader_worker:
-            self._loader_worker.cancel()
-        if self._loader_thread and self._loader_thread.isRunning():
-            self._loader_thread.quit()
-            self._loader_thread.wait(1000)
-        self._loader_thread = None
-        self._loader_worker = None
-
-    def _on_foam_loaded(self, success: bool, result):
-        """비동기 로딩 완료 콜백"""
-        self.hide_progress()
-        self._loader_thread = None
-        self._loader_worker = None
+        success = False
+        error_msg = ""
+        try:
+            foam_reader = OpenFOAMReader()
+            if foam_reader.load(file_path):
+                self.foam_reader = foam_reader
+                success = True
+            else:
+                error_msg = "OpenFOAM 케이스 로드 실패"
+        except Exception as e:
+            error_msg = str(e)
+        finally:
+            QApplication.restoreOverrideCursor()
+            self.hide_progress()
+            self._loading = False
 
         if not success:
-            error_msg = result if isinstance(result, str) else "Unknown error"
-            QMessageBox.warning(
-                self, "Load Failed",
-                f"OpenFOAM 케이스 로드 실패:\n{error_msg}"
-            )
+            QMessageBox.warning(self, "Load Failed", f"OpenFOAM 케이스 로드 실패:\n{error_msg}")
             return
 
-        # 로딩 성공 - result는 OpenFOAMReader 객체
-        self.foam_reader = result
         self._finalize_foam_load()
+
+    def _cancel_loading(self):
+        """로딩 상태 초기화"""
+        self._loading = False
 
     def _finalize_foam_load(self):
         """OpenFOAM 케이스 로드 완료 처리"""
+        self.hide_progress()
+
         # VTK 리더 참조 (기존 코드 호환용)
         self.reader = self.foam_reader.get_reader()
 
@@ -1014,7 +956,7 @@ class PostprocessWidget(QMainWindow):
         try:
             if self.interactor:
                 self.interactor.Disable()
-                self.interactor.TerminateApp()
+                # NOTE: TerminateApp()은 QApplication.quit()을 호출하므로 사용하지 않음
                 self.interactor = None
 
             if self.renderer:
@@ -1033,6 +975,10 @@ class PostprocessWidget(QMainWindow):
             pass
 
     def closeEvent(self, event):
-        """닫기 이벤트"""
+        """닫기 이벤트 - dock에 embed된 경우 앱 종료 방지"""
+        # 부모가 있으면 dock 내부에 embed된 것이므로 이벤트를 무시
+        if self.parent() is not None:
+            event.ignore()
+            return
         self.cleanup()
         super().closeEvent(event)

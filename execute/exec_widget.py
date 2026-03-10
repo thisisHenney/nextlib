@@ -949,6 +949,34 @@ class ExecWidget(QWidget):
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
 
+    def _suspend_tree(self, pid: int):
+        """부모 및 모든 자식 프로세스에 SIGSTOP 전송."""
+        try:
+            parent = psutil.Process(pid)
+            children = parent.children(recursive=True)
+            for child in children:
+                try:
+                    child.suspend()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+            parent.suspend()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+    def _resume_tree(self, pid: int):
+        """부모 및 모든 자식 프로세스에 SIGCONT 전송."""
+        try:
+            parent = psutil.Process(pid)
+            children = parent.children(recursive=True)
+            for child in children:
+                try:
+                    child.resume()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+            parent.resume()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
     def pause_process(self):
         if not self.is_running():
             for i, d in enumerate(self._thread_find_cpus):
@@ -959,20 +987,12 @@ class ExecWidget(QWidget):
         for i, proc in enumerate(self._procs):
             if self._procs_state[i] in (QProcess.ProcessState.Starting, QProcess.ProcessState.Running):
                 proc_id = proc.processId()
-                try:
-                    psutil.Process(proc_id).suspend()
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    continue
-
+                self._suspend_tree(proc_id)
             elif self._procs_state[i] == QProcess_ProcessState_WAITING:
                 self._thread_find_cpus[i].stop_finding()
 
-            else:
-                ...
-
         self._pause_all_proc = True
         self.add_log_notice('Paused')
-        # self.sig_proc_status.emit(0, -1, -1, 'Paused')
 
     def resume_process(self):
         if not self.is_running():
@@ -982,15 +1002,9 @@ class ExecWidget(QWidget):
             state = self._procs_state[i]
             if state in (QProcess.ProcessState.Starting, QProcess.ProcessState.Running):
                 proc_id = proc.processId()
-                try:
-                    p = psutil.Process(proc_id)
-                    p.resume()
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    continue
-
+                self._resume_tree(proc_id)
             elif state in (QProcess_ProcessState_WAITING, QProcess_ProcessState_START):
                 self._get_usable_procs(i)
 
         self._pause_all_proc = False
         self.add_log_notice('Continue')
-        # self.sig_proc_status.emit(0, -1, -1, 'Continue')

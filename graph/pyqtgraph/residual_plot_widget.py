@@ -15,6 +15,7 @@ class ResidualPlotWidget(QMainWindow):
 
         self.data = None
         self._current_log_path = None
+        self._target_vars = None  # None = all variables
         self._drag_enabled = True
         self._auto_arrange = True
 
@@ -52,12 +53,20 @@ class ResidualPlotWidget(QMainWindow):
 
         # Curve styles
         self.curve_style = {
-            'Ux': dict(pen=pg.mkPen(color='r', width=2)),
-            'Uy': dict(pen=pg.mkPen(color='g', width=2)),
-            'p': dict(pen=pg.mkPen(color='b', width=2)),
-            'epsilon': dict(pen=pg.mkPen(color='m', width=2)),
-            'k': dict(pen=pg.mkPen(color='c', width=2)),
+            'Ux':      dict(pen=pg.mkPen(color='r',                  width=2)),
+            'Uy':      dict(pen=pg.mkPen(color='g',                  width=2)),
+            'Uz':      dict(pen=pg.mkPen(color=(255, 128, 0),        width=2)),
+            'p':       dict(pen=pg.mkPen(color='b',                  width=2)),
+            'epsilon': dict(pen=pg.mkPen(color='m',                  width=2)),
+            'k':       dict(pen=pg.mkPen(color='c',                  width=2)),
+            'h':       dict(pen=pg.mkPen(color=(255, 200, 0),        width=2)),
+            'rho':     dict(pen=pg.mkPen(color=(180, 100, 255),      width=2)),
         }
+        # Fallback colors for unexpected variables not in curve_style
+        self._fallback_colors = [
+            (200, 200, 200), (100, 255, 150), (255, 100, 150),
+            (100, 200, 255), (255, 180, 100),
+        ]
 
     def _build_toolbar(self):
         """Build toolbar with actions."""
@@ -102,17 +111,18 @@ class ResidualPlotWidget(QMainWindow):
             vb.disableAutoRange()
         self._auto_action.setToolTip("Auto Arrange: On" if checked else "Auto Arrange: Off")
 
-    def load_file(self, log_path: str):
+    def load_file(self, log_path: str, target_vars=None):
         if not Path(log_path).is_file():
             return
         self._current_log_path = log_path
-        self.data = self.parse_log_file(log_path)
+        self._target_vars = target_vars
+        self.data = self.parse_log_file(log_path, target_vars)
         self.update_plot()
 
     def reload(self):
         """Reload the current log file."""
         if self._current_log_path:
-            self.load_file(self._current_log_path)
+            self.load_file(self._current_log_path, self._target_vars)
 
     def _on_refresh(self):
         """Handle refresh button click."""
@@ -120,39 +130,55 @@ class ResidualPlotWidget(QMainWindow):
             self.reload()
         self.refresh_requested.emit()
 
-    def parse_log_file(self, path: str):
+    def parse_log_file(self, path: str, target_vars=None):
+        # time → {var: last_final_residual} per timestep
+        # target_vars: set/list of variable names to collect, None = all
         time_values = []
-        residuals = {
-            'Ux': [],
-            'Uy': [],
-            'p': [],
-            'epsilon': [],
-            'k': []
-        }
+        residuals = {}   # var -> [value per timestep]
+
+        target_vars = set(target_vars) if target_vars is not None else None
 
         current_time = None
+        current_res = {}  # var -> latest Final residual in this timestep
 
-        time_re = re.compile(r"^Time = (\d+)")
-        res_re = re.compile(r"Solving for (\w+), .*Final residual = ([0-9.eE+-]+)")
+        time_re = re.compile(r"^Time = ([0-9.eE+-]+)")
+        res_re  = re.compile(r"Solving for (\w+),.*?Final residual = ([0-9.eE+-]+)")
 
         with open(path, 'r', encoding='utf-8', errors='ignore') as f:
             for line in f:
                 line = line.strip()
 
-                # Time
                 m = time_re.match(line)
                 if m:
-                    current_time = int(m.group(1))
-                    time_values.append(current_time)
+                    # Flush previous timestep
+                    if current_time is not None:
+                        time_values.append(current_time)
+                        for var, val in current_res.items():
+                            residuals.setdefault(var, []).append(val)
+                        # Fill missing vars with None for this timestep
+                        for var in residuals:
+                            if len(residuals[var]) < len(time_values):
+                                residuals[var].append(None)
+                    current_time = float(m.group(1))
+                    current_res = {}
                     continue
 
-                # Residual
                 m = res_re.search(line)
                 if m and current_time is not None:
                     var = m.group(1)
-                    val = float(m.group(2))
-                    if var in residuals:
-                        residuals[var].append(val)
+                    if target_vars is None or var in target_vars:
+                        val = float(m.group(2))
+                        # Keep maximum across regions (CHTMultiRegionFoam reports same var per region)
+                        current_res[var] = max(current_res.get(var, 0.0), val)
+
+        # Flush last timestep
+        if current_time is not None and current_res:
+            time_values.append(current_time)
+            for var, val in current_res.items():
+                residuals.setdefault(var, []).append(val)
+            for var in residuals:
+                if len(residuals[var]) < len(time_values):
+                    residuals[var].append(None)
 
         return {
             'time': time_values,
@@ -170,14 +196,21 @@ class ResidualPlotWidget(QMainWindow):
 
         self.legend = self.plot_widget.addLegend()
 
-        for key in res.keys():
-            if len(res[key]) == len(time):
-                self.plot_widget.plot(
-                    time,
-                    res[key],
-                    name=key,
-                    **self.curve_style[key]
-                )
+        fallback_idx = 0
+        for key, values in res.items():
+            # Filter out None (missing timesteps) and align time axis
+            pairs = [(t, v) for t, v in zip(time, values) if v is not None]
+            if not pairs:
+                continue
+            t_arr, v_arr = zip(*pairs)
+
+            style = self.curve_style.get(key)
+            if style is None:
+                color = self._fallback_colors[fallback_idx % len(self._fallback_colors)]
+                fallback_idx += 1
+                style = dict(pen=pg.mkPen(color=color, width=2))
+
+            self.plot_widget.plot(list(t_arr), list(v_arr), name=key, **style)
 
         if self._auto_arrange:
             self.plot_widget.getViewBox().enableAutoRange()

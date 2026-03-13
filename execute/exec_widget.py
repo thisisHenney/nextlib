@@ -138,7 +138,6 @@ class ExecWidget(QWidget):
         self._funcs_restore_ui = []
 
         self._log_msg = ''
-        self._all_msgs = []
 
         self._working_path = './'
 
@@ -160,6 +159,9 @@ class ExecWidget(QWidget):
         self._flush_timer = None
         self._flush_interval = 100  # ms (더 긴 간격으로 GUI 부하 감소)
 
+        # 파일 로깅
+        self._log_file_handles = []  # 프로세스별 파일 핸들
+
         self._initialize()
 
     def get_current_view(self):
@@ -173,10 +175,25 @@ class ExecWidget(QWidget):
         return self._procs
 
     def get_messages(self, index):
-        if index >= len(self._all_msgs):
-            return ''
-        msgs = self._all_msgs[index]
-        return ''.join(msgs) if isinstance(msgs, list) else msgs
+        log_path = self._get_log_path(index)
+        if log_path and log_path.exists():
+            try:
+                return log_path.read_text(encoding='utf-8', errors='replace')
+            except Exception:
+                pass
+        return ''
+
+    def _get_log_path(self, proc_idx: int):
+        return Path(self._working_path) / f'stdout_{proc_idx}.log'
+
+    def _close_log_files(self):
+        for fh in self._log_file_handles:
+            if fh:
+                try:
+                    fh.flush()
+                    fh.close()
+                except Exception:
+                    pass
 
     def _initialize(self):
         self._init_edit()
@@ -211,8 +228,16 @@ class ExecWidget(QWidget):
 
         elif cur_view == 1:
             cur_proc = self.get_current_view() - 1
-            self._all_msgs[cur_proc] = []
             self._output_view.clear()
+            # 로그 파일도 비우기
+            if cur_proc < len(self._log_file_handles):
+                fh = self._log_file_handles[cur_proc]
+                if fh:
+                    try:
+                        fh.seek(0)
+                        fh.truncate()
+                    except Exception:
+                        pass
             self.add_message_output('######### cleared log #########\n',
                                     cur_proc, record=False)
 
@@ -225,10 +250,12 @@ class ExecWidget(QWidget):
             self._ui.checkBox_tracking.hide()
             self.set_scroll_bottom(index)
         else:
-            text = self.get_messages(index-1)
-            self.set_text(text, index)
             self._ui.stackedWidget.setCurrentIndex(1)
             self._ui.checkBox_tracking.show()
+            # 실행 중이 아닐 때만 파일에서 전체 내용 로드
+            if not self.is_running():
+                text = self.get_messages(index - 1)
+                self.set_text(text, index)
             self.set_scroll_bottom(1)
 
     def _init_edit(self):
@@ -246,7 +273,7 @@ class ExecWidget(QWidget):
         mono_font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
         mono_font.setPointSize(FONT_SIZE)
         self._output_view.setFont(mono_font)
-        self._output_view.document().setMaximumBlockCount(5000)
+        self._output_view.setMaximumBlockCount(100000)
 
     def put_in_layout(self, layout):
         layout.addWidget(self)
@@ -324,7 +351,9 @@ class ExecWidget(QWidget):
 
         if not reset:
             self._log_msg = ''
-        self._all_msgs = []
+
+        self._close_log_files()
+        self._log_file_handles = []
 
         self._start_time = []
         self._elapsed_time = []
@@ -333,6 +362,7 @@ class ExecWidget(QWidget):
         # Stop flush timer to prevent crashes during cleanup
         if self._flush_timer:
             self._flush_timer.stop()
+        self._close_log_files()
         self.stop_process()
 
     def reset(self):
@@ -413,7 +443,7 @@ class ExecWidget(QWidget):
     def clear_view(self, index=-1):
         if index == 0 or index == -1:
             self._log_view.clear()
-        elif index == 0 or index == -1:
+        if index == 1 or index == -1:
             self._output_view.clear()
 
     def add_log_ready(self):
@@ -462,21 +492,25 @@ class ExecWidget(QWidget):
         self.set_scroll_bottom(0)
 
     def add_message_output(self, text='', proc_idx=0, record=True):
-        if record:
-            if isinstance(self._all_msgs[proc_idx], list):
-                self._all_msgs[proc_idx].append(text)
-            else:
-                self._all_msgs[proc_idx] += text
+        if record and proc_idx < len(self._log_file_handles):
+            fh = self._log_file_handles[proc_idx]
+            if fh:
+                try:
+                    fh.write(text)
+                except Exception:
+                    pass
         if proc_idx not in self._output_buffer:
             self._output_buffer[proc_idx] = []
         self._output_buffer[proc_idx].append(text)
 
     def add_message_error(self, text='', proc_idx=0, record=True):
-        if record:
-            if isinstance(self._all_msgs[proc_idx], list):
-                self._all_msgs[proc_idx].append(text)
-            else:
-                self._all_msgs[proc_idx] += text
+        if record and proc_idx < len(self._log_file_handles):
+            fh = self._log_file_handles[proc_idx]
+            if fh:
+                try:
+                    fh.write(text)
+                except Exception:
+                    pass
         if proc_idx not in self._output_buffer:
             self._output_buffer[proc_idx] = []
         self._output_buffer[proc_idx].append(text)
@@ -576,6 +610,14 @@ class ExecWidget(QWidget):
         self._ui.comboBox_output_proc_index.addItem('Log')
         self._ui.comboBox_output_proc_index.addItems([str(f'Proc. {i}') for i in range(self._using_proc_num)])
 
+        # 프로세스별 stdout 로그 파일 열기
+        for i in range(self._using_proc_num):
+            try:
+                fh = open(self._get_log_path(i), 'w', encoding='utf-8', buffering=1)
+                self._log_file_handles.append(fh)
+            except Exception:
+                self._log_file_handles.append(None)
+
         # Run Process
         for proc_idx in range(self._using_proc_num):
             self._funcs_get_finished.append(create_func_args(self._get_finished, proc_idx))
@@ -584,7 +626,6 @@ class ExecWidget(QWidget):
             self._funcs_get_message_error.append(create_func_args(self._get_message_error, proc_idx))
 
             self._procs_state.append(QProcess.ProcessState.NotRunning)
-            self._all_msgs.append([])
             self._start_time.append(0)
             self._elapsed_time.append(0)
 
@@ -620,7 +661,8 @@ class ExecWidget(QWidget):
             # self.sig_proc_status.emit(proc_idx, cpu_id, pid, 'Running=1')
 
         if self._thread_find_cpus[proc_idx] is not None:
-            self._thread_find_cpus[proc_idx].terminate()
+            self._thread_find_cpus[proc_idx].stop_finding()
+            self._thread_find_cpus[proc_idx].wait(1000)
             self._thread_find_cpus[proc_idx] = None
 
         if self._is_assigned_cpu:
@@ -800,9 +842,11 @@ class ExecWidget(QWidget):
             if self._funcs_restore_ui:
                 self._run_restore_ui()
 
-        # Clean up thread reference (thread will finish on its own)
+        # Clean up thread reference
         if not is_next and self._thread_find_cpus[proc_idx] is not None:
+            t = self._thread_find_cpus[proc_idx]
             self._thread_find_cpus[proc_idx] = None
+            t.wait(500)
 
     def _run_next(self, proc_idx):
         new_proc = QProcess()
@@ -908,6 +952,8 @@ class ExecWidget(QWidget):
             for i, d in enumerate(self._procs):
                 if self._thread_find_cpus[i] is not None:
                     self._thread_find_cpus[i].stop_finding()
+                    self._thread_find_cpus[i].wait(500)
+                    self._thread_find_cpus[i] = None
             return
 
         self._commands = []
@@ -932,6 +978,8 @@ class ExecWidget(QWidget):
 
             elif self._procs_state[i] == QProcess_ProcessState_WAITING:
                 self._thread_find_cpus[i].stop_finding()
+                self._thread_find_cpus[i].wait(500)
+                self._thread_find_cpus[i] = None
 
             else:
                 ...
@@ -948,7 +996,7 @@ class ExecWidget(QWidget):
                 except psutil.NoSuchProcess:
                     pass
             parent.kill()
-            psutil.wait_procs([parent], timeout=3)
+            psutil.wait_procs([parent], timeout=0)
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
 

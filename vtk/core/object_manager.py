@@ -510,8 +510,8 @@ class ObjectManager(QObject):
                     faded_color = (0.7, 0.72, 0.75)  # 연한 그레이
                     prop.SetColor(faded_color)
 
-            # 선택된 객체들의 bbox 표시
-            self._add_selection_bbox()
+            # bbox 표시 비활성화 (선택 시 외곽선 없음)
+            # self._add_selection_bbox()
         else:
             # 선택이 없으면 모든 객체 현재 스타일로 완전 복원 (Representation 포함)
             for obj in self._objects.values():

@@ -19,6 +19,12 @@ class ResidualPlotWidget(QMainWindow):
         self._drag_enabled = True
         self._auto_arrange = True
 
+        # 증분 파싱 상태
+        self._incr_offset: int = 0
+        self._incr_data: dict = {'time': [], 'residuals': {}}
+        self._incr_partial_time = None
+        self._incr_partial_res: dict = {}
+
         self._setup_ui()
         self._build_toolbar()
 
@@ -110,6 +116,60 @@ class ResidualPlotWidget(QMainWindow):
         else:
             vb.disableAutoRange()
         self._auto_action.setToolTip("Auto Arrange: On" if checked else "Auto Arrange: Off")
+
+    def reset_incremental(self):
+        """증분 파싱 상태 초기화 (새 솔버 실행 시 호출)."""
+        self._incr_offset = 0
+        self._incr_data = {'time': [], 'residuals': {}}
+        self._incr_partial_time = None
+        self._incr_partial_res = {}
+
+    def load_file_incremental(self, log_path: str, target_vars=None):
+        """증분 파싱: 마지막 읽은 위치부터만 새로 파싱하여 성능 향상."""
+        if not Path(log_path).is_file():
+            return
+
+        # 파일 경로나 target_vars가 바뀌면 전체 재파싱
+        if log_path != self._current_log_path or target_vars != self._target_vars:
+            self.reset_incremental()
+            self._current_log_path = log_path
+            self._target_vars = target_vars
+
+        target_set = set(target_vars) if target_vars is not None else None
+        time_re = re.compile(r"^Time = ([0-9.eE+-]+)")
+        res_re  = re.compile(r"Solving for (\w+),.*?Final residual = ([0-9.eE+-]+)")
+
+        with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
+            f.seek(self._incr_offset)
+            for line in f:
+                line_s = line.strip()
+
+                m = time_re.match(line_s)
+                if m:
+                    # 이전 타임스텝 플러시
+                    if self._incr_partial_time is not None and self._incr_partial_res:
+                        self._incr_data['time'].append(self._incr_partial_time)
+                        n = len(self._incr_data['time'])
+                        for var, val in self._incr_partial_res.items():
+                            self._incr_data['residuals'].setdefault(var, []).append(val)
+                        for var in self._incr_data['residuals']:
+                            while len(self._incr_data['residuals'][var]) < n:
+                                self._incr_data['residuals'][var].append(None)
+                    self._incr_partial_time = float(m.group(1))
+                    self._incr_partial_res = {}
+                    continue
+
+                m = res_re.search(line_s)
+                if m and self._incr_partial_time is not None:
+                    var = m.group(1)
+                    if target_set is None or var in target_set:
+                        val = float(m.group(2))
+                        self._incr_partial_res[var] = max(self._incr_partial_res.get(var, 0.0), val)
+
+            self._incr_offset = f.tell()
+
+        self.data = self._incr_data
+        self.update_plot()
 
     def load_file(self, log_path: str, target_vars=None):
         if not Path(log_path).is_file():

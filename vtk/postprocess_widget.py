@@ -7,10 +7,10 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QMainWindow, QVBoxLayout, QHBoxLayout, QToolBar, QComboBox,
     QFileDialog, QLabel, QSlider, QCheckBox, QMessageBox, QLineEdit, QFrame,
-    QProgressBar
+    QProgressBar, QSpinBox, QSizePolicy
 )
 from PySide6.QtGui import QAction, QIcon, QDoubleValidator
-from PySide6.QtCore import Signal, Qt, QObject
+from PySide6.QtCore import Signal, Qt, QObject, QThread, QTimer
 from PySide6.QtWidgets import QApplication
 
 import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
@@ -33,8 +33,30 @@ ICON_DIR = RES_DIR / "res" / "icon"
 
 
 class FoamLoaderWorker(QObject):
-    """하위 호환성을 위해 유지 (현재는 사용 안 함)"""
-    pass
+    """OpenFOAM 케이스 로드를 별도 스레드에서 실행하는 Worker.
+
+    Qt 메인(UI) 스레드를 블로킹하지 않도록 QThread 위에서 실행됩니다.
+    VTK reader.Update() 호출은 데이터 처리만 하므로 스레드 안전합니다.
+    렌더링(actor 추가, Render())은 메인 스레드에서만 수행됩니다.
+    """
+    finished = Signal(bool, str)  # (success, error_msg)
+
+    def __init__(self, file_path: str):
+        super().__init__()
+        self.file_path = file_path
+        self.foam_reader = None
+
+    def run(self):
+        try:
+            reader = OpenFOAMReader()
+            # build_surface=False: vtkCompositeDataGeometryFilter는 메인 스레드에서만 안전
+            if reader.load(self.file_path, build_surface=False):
+                self.foam_reader = reader
+                self.finished.emit(True, "")
+            else:
+                self.finished.emit(False, "OpenFOAM 케이스 로드 실패")
+        except Exception as e:
+            self.finished.emit(False, str(e))
 
 
 class PostprocessWidget(QMainWindow):
@@ -56,6 +78,7 @@ class PostprocessWidget(QMainWindow):
 
         # OpenFOAM reader
         self.reader = None
+        self.foam_reader = None
         self.field_names: list = []
         self._case_path: str = ""
 
@@ -74,12 +97,25 @@ class PostprocessWidget(QMainWindow):
         self.scalar_bar_visible = True
 
         self._loading: bool = False
+        self._foam_loader_worker = None
+        self._foam_loader_thread = None
+
+        # 애니메이션 상태
+        self._anim_time_values: list = []
+        self._anim_current_idx: int = 0
+        self._anim_is_playing: bool = False
+        self._anim_timer = QTimer(self)
+        self._anim_timer.timeout.connect(self._on_anim_tick)
+
+        # Overlay actors – persist across field/slice changes
+        self._overlay_actors: list = []
 
         self._setup_ui()
         self._setup_vtk()
         self._setup_tools()
         self._build_toolbar()
         self._build_control_panel()
+        self._build_anim_toolbar()
 
         self._set_background()
         self.interactor.Initialize()
@@ -270,6 +306,73 @@ class PostprocessWidget(QMainWindow):
 
         self.addToolBar(Qt.BottomToolBarArea, ctrl_toolbar)
 
+    def _build_anim_toolbar(self):
+        """타임스텝 애니메이션 컨트롤 툴바"""
+        anim_toolbar = QToolBar("Animation", self)
+        anim_toolbar.setObjectName("vtkAnimBar")
+        anim_toolbar.setFloatable(True)
+        anim_toolbar.setMovable(True)
+
+        # 이전 프레임
+        self._anim_prev_action = QAction("◀", self)
+        self._anim_prev_action.setToolTip("Previous Time Step")
+        self._anim_prev_action.triggered.connect(self._on_anim_prev)
+        self._anim_prev_action.setEnabled(False)
+        anim_toolbar.addAction(self._anim_prev_action)
+
+        # 재생/일시정지
+        self._anim_play_action = QAction("▶", self)
+        self._anim_play_action.setToolTip("Play / Pause")
+        self._anim_play_action.triggered.connect(self._on_anim_play_pause)
+        self._anim_play_action.setEnabled(False)
+        anim_toolbar.addAction(self._anim_play_action)
+
+        # 다음 프레임
+        self._anim_next_action = QAction("▶|", self)
+        self._anim_next_action.setToolTip("Next Time Step")
+        self._anim_next_action.triggered.connect(self._on_anim_next)
+        self._anim_next_action.setEnabled(False)
+        anim_toolbar.addAction(self._anim_next_action)
+
+        anim_toolbar.addSeparator()
+
+        # 타임스텝 슬라이더
+        self._anim_slider = QSlider(Qt.Horizontal)
+        self._anim_slider.setRange(0, 0)
+        self._anim_slider.setMinimumWidth(80)
+        self._anim_slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._anim_slider.setEnabled(False)
+        self._anim_slider.valueChanged.connect(self._on_anim_slider_changed)
+        anim_toolbar.addWidget(self._anim_slider)
+
+        # 현재 시간값 표시 (에디트 콤보박스)
+        self._anim_time_combo = QComboBox()
+        self._anim_time_combo.setEditable(True)
+        self._anim_time_combo.setMinimumWidth(110)
+        self._anim_time_combo.setToolTip("Current Time / Select Time Step")
+        self._anim_time_combo.setEnabled(False)
+        self._anim_time_combo.activated.connect(self._on_anim_time_combo_activated)
+        self._anim_time_combo.lineEdit().editingFinished.connect(self._on_anim_time_combo_edited)
+        anim_toolbar.addWidget(self._anim_time_combo)
+
+        # 프레임 카운터
+        self._anim_frame_label = QLabel("0 / 0")
+        self._anim_frame_label.setMinimumWidth(60)
+        anim_toolbar.addWidget(self._anim_frame_label)
+
+        anim_toolbar.addSeparator()
+
+        # FPS 설정
+        anim_toolbar.addWidget(QLabel("FPS:"))
+        self._anim_fps_spin = QSpinBox()
+        self._anim_fps_spin.setRange(1, 60)
+        self._anim_fps_spin.setValue(10)
+        self._anim_fps_spin.setFixedWidth(65)
+        self._anim_fps_spin.setToolTip("Animation Speed (frames per second)")
+        anim_toolbar.addWidget(self._anim_fps_spin)
+
+        self.addToolBar(Qt.BottomToolBarArea, anim_toolbar)
+
     def _add_action(self, name: str, icon_name: str, slot):
         """툴바 액션 추가"""
         icon = self._make_icon(icon_name) if icon_name else QIcon()
@@ -347,18 +450,36 @@ class PostprocessWidget(QMainWindow):
             )
             return
 
-        # 폴더인 경우 OpenFOAM 케이스인지 먼저 확인
         path = Path(file_path)
         if path.is_dir() and not OpenFOAMReader.is_openfoam_case(path):
-            QMessageBox.warning(
-                self, "Invalid Case",
-                f"유효한 OpenFOAM 케이스 폴더가 아닙니다:\n{file_path}\n\n"
-                "다음 중 하나가 필요합니다:\n"
-                "- constant/polyMesh 폴더\n"
-                "- constant 및 system 폴더\n"
-                "- .foam 파일"
-            )
-            return
+            # 서브폴더에서 유효한 케이스 탐색 (최상위 폴더 선택 시 자동 인식)
+            found = None
+            for sub in ("5.CHTFCase", "CHTFCase", "fluid", "run"):
+                sp = path / sub
+                if sp.is_dir() and OpenFOAMReader.is_openfoam_case(sp):
+                    found = sp
+                    break
+            if found is None:
+                try:
+                    for child in sorted(path.iterdir()):
+                        if child.is_dir() and OpenFOAMReader.is_openfoam_case(child):
+                            found = child
+                            break
+                except Exception:
+                    pass
+            if found is not None:
+                file_path = str(found)
+                path = found
+            else:
+                QMessageBox.warning(
+                    self, "Invalid Case",
+                    f"유효한 OpenFOAM 케이스 폴더를 찾을 수 없습니다:\n{file_path}\n\n"
+                    "다음 중 하나가 필요합니다:\n"
+                    "- constant/polyMesh 폴더\n"
+                    "- constant 및 system 폴더\n"
+                    "- .foam 파일"
+                )
+                return
 
         # 중복 로딩 방지
         if self._loading:
@@ -368,33 +489,42 @@ class PostprocessWidget(QMainWindow):
         # 인-위젯 프로그레스 바 표시 + 대기 커서
         self.show_progress("Loading case...")
         QApplication.setOverrideCursor(Qt.WaitCursor)
-        QApplication.processEvents()
 
-        success = False
-        error_msg = ""
-        try:
-            foam_reader = OpenFOAMReader()
-            if foam_reader.load(file_path):
-                self.foam_reader = foam_reader
-                success = True
-            else:
-                error_msg = "OpenFOAM 케이스 로드 실패"
-        except Exception as e:
-            error_msg = str(e)
-        finally:
-            QApplication.restoreOverrideCursor()
-            self.hide_progress()
-            self._loading = False
+        # 백그라운드 스레드에서 데이터 로드 (build_surface=False: 렌더링 객체 생성 없음)
+        self._foam_loader_worker = FoamLoaderWorker(file_path)
+        self._foam_loader_thread = QThread(self)
+        self._foam_loader_worker.moveToThread(self._foam_loader_thread)
+
+        self._foam_loader_thread.started.connect(self._foam_loader_worker.run)
+        self._foam_loader_worker.finished.connect(self._on_foam_loaded)
+        self._foam_loader_worker.finished.connect(self._foam_loader_thread.quit)
+        self._foam_loader_thread.finished.connect(self._foam_loader_thread.deleteLater)
+
+        self._foam_loader_thread.start()
+
+    def _cancel_loading(self):
+        """로딩 상태 초기화"""
+        self._loading = False
+
+    def _on_foam_loaded(self, success: bool, error_msg: str):
+        """백그라운드 로딩 완료 콜백 (메인 스레드에서 실행)"""
+        QApplication.restoreOverrideCursor()
+        self.hide_progress()
+        self._loading = False
+
+        worker = getattr(self, '_foam_loader_worker', None)
+        self._foam_loader_worker = None
+        self._foam_loader_thread = None
 
         if not success:
             QMessageBox.warning(self, "Load Failed", f"OpenFOAM 케이스 로드 실패:\n{error_msg}")
             return
 
-        self._finalize_foam_load()
+        if worker is None or worker.foam_reader is None:
+            return
 
-    def _cancel_loading(self):
-        """로딩 상태 초기화"""
-        self._loading = False
+        self.foam_reader = worker.foam_reader
+        self._finalize_foam_load()
 
     def _finalize_foam_load(self):
         """OpenFOAM 케이스 로드 완료 처리"""
@@ -426,6 +556,13 @@ class PostprocessWidget(QMainWindow):
         self.axis_combo.setEnabled(True)
         self.slice_pos = (self.axis_min + self.axis_max) / 2.0
         self._update_slider_position()
+
+        # 애니메이션 컨트롤 초기화
+        self._anim_time_values = self.foam_reader.get_time_values()
+        self._anim_current_idx = len(self._anim_time_values) - 1 if self._anim_time_values else 0
+        self._anim_is_playing = False
+        self._anim_timer.stop()
+        self._update_anim_ui()
 
         # 기본 필드 표시
         if self.field_names:
@@ -498,6 +635,131 @@ class PostprocessWidget(QMainWindow):
         else:
             self.zmin, self.zmax = 0.0, 1.0
 
+    # ===== 애니메이션 =====
+
+    def _update_anim_ui(self):
+        """애니메이션 컨트롤 UI 상태 갱신"""
+        n = len(self._anim_time_values)
+        has_anim = n > 1
+
+        self._anim_prev_action.setEnabled(has_anim)
+        self._anim_play_action.setEnabled(has_anim)
+        self._anim_next_action.setEnabled(has_anim)
+        self._anim_slider.setEnabled(has_anim)
+        self._anim_time_combo.setEnabled(n > 0)
+
+        if n == 0:
+            self._anim_slider.setRange(0, 0)
+            self._anim_time_combo.blockSignals(True)
+            self._anim_time_combo.clear()
+            self._anim_time_combo.lineEdit().setText("T: -")
+            self._anim_time_combo.blockSignals(False)
+            self._anim_frame_label.setText("0 / 0")
+            return
+
+        self._anim_slider.blockSignals(True)
+        self._anim_slider.setRange(0, n - 1)
+        self._anim_slider.setValue(self._anim_current_idx)
+        self._anim_slider.blockSignals(False)
+
+        self._anim_time_combo.blockSignals(True)
+        self._anim_time_combo.clear()
+        for tv in self._anim_time_values:
+            self._anim_time_combo.addItem(f"{tv:.6g}")
+        self._anim_time_combo.setCurrentIndex(self._anim_current_idx)
+        self._anim_time_combo.blockSignals(False)
+
+        self._anim_frame_label.setText(f"{self._anim_current_idx + 1} / {n}")
+
+        play_symbol = "⏸" if self._anim_is_playing else "▶"
+        self._anim_play_action.setText(play_symbol)
+
+    def _goto_time_index(self, idx: int):
+        """지정 인덱스의 타임스텝으로 이동하고 화면 갱신"""
+        if not self._anim_time_values or self.foam_reader is None:
+            return
+        idx = max(0, min(len(self._anim_time_values) - 1, idx))
+        self._anim_current_idx = idx
+
+        t = self._anim_time_values[idx]
+        self.foam_reader.update_time(t)
+
+        # 필드 목록 갱신 (타임스텝마다 달라질 수 있음)
+        new_fields = self.foam_reader.get_field_names()
+        if new_fields != self.field_names:
+            self.field_names = new_fields
+            current = self.field_combo.currentText()
+            self.field_combo.blockSignals(True)
+            self.field_combo.clear()
+            self.field_combo.addItems(self.field_names)
+            if current in self.field_names:
+                self.field_combo.setCurrentText(current)
+            self.field_combo.blockSignals(False)
+
+        self._display_field()
+        self._update_anim_ui()
+
+    def _on_anim_prev(self):
+        self._stop_anim()
+        self._goto_time_index(self._anim_current_idx - 1)
+
+    def _on_anim_next(self):
+        self._stop_anim()
+        self._goto_time_index(self._anim_current_idx + 1)
+
+    def _on_anim_play_pause(self):
+        if self._anim_is_playing:
+            self._stop_anim()
+        else:
+            self._start_anim()
+
+    def _start_anim(self):
+        if not self._anim_time_values or len(self._anim_time_values) <= 1:
+            return
+        self._anim_is_playing = True
+        fps = self._anim_fps_spin.value()
+        self._anim_timer.start(max(1, 1000 // fps))
+        self._update_anim_ui()
+
+    def _stop_anim(self):
+        self._anim_is_playing = False
+        self._anim_timer.stop()
+        self._update_anim_ui()
+
+    def _on_anim_tick(self):
+        """타이머 틱: 다음 프레임으로 이동, 마지막 도달 시 정지"""
+        next_idx = self._anim_current_idx + 1
+        if next_idx >= len(self._anim_time_values):
+            self._stop_anim()
+            return
+        self._goto_time_index(next_idx)
+
+    def _on_anim_slider_changed(self, value: int):
+        if self._anim_is_playing:
+            self._stop_anim()
+        self._goto_time_index(value)
+
+    def _on_anim_time_combo_activated(self, index: int):
+        """콤보박스에서 항목 선택 시 해당 타임스텝으로 이동"""
+        if self._anim_is_playing:
+            self._stop_anim()
+        self._goto_time_index(index)
+
+    def _on_anim_time_combo_edited(self):
+        """콤보박스 직접 입력 후 Enter 시 가장 가까운 타임스텝으로 이동"""
+        if not self._anim_time_values:
+            return
+        text = self._anim_time_combo.lineEdit().text().strip()
+        try:
+            val = float(text)
+        except ValueError:
+            return
+        closest = min(range(len(self._anim_time_values)),
+                      key=lambda i: abs(self._anim_time_values[i] - val))
+        if self._anim_is_playing:
+            self._stop_anim()
+        self._goto_time_index(closest)
+
     # ===== 필드 시각화 =====
 
     def _on_field_changed(self):
@@ -548,6 +810,7 @@ class PostprocessWidget(QMainWindow):
 
         if found_datasets == 0:
             self.renderer.RemoveAllViewProps()
+            self._reapply_overlay_actors()
             self._remove_scalar_bar()
             self._render()
             return
@@ -557,6 +820,7 @@ class PostprocessWidget(QMainWindow):
 
         if ug is None or ug.GetNumberOfPoints() == 0:
             self.renderer.RemoveAllViewProps()
+            self._reapply_overlay_actors()
             self._remove_scalar_bar()
             self._render()
             return
@@ -576,12 +840,14 @@ class PostprocessWidget(QMainWindow):
             use_point = False
         else:
             self.renderer.RemoveAllViewProps()
+            self._reapply_overlay_actors()
             self._remove_scalar_bar()
             self._render()
             return
 
         # Mapper 설정
         self.renderer.RemoveAllViewProps()
+        self._reapply_overlay_actors()
 
         mapper = vtkDataSetMapper()
         mapper.SetInputData(ug)
@@ -622,6 +888,7 @@ class PostprocessWidget(QMainWindow):
         ug = self._build_field_dataset(field)
         if ug is None:
             self.renderer.RemoveAllViewProps()
+            self._reapply_overlay_actors()
             self._remove_scalar_bar()
             self._render()
             return
@@ -646,6 +913,7 @@ class PostprocessWidget(QMainWindow):
         poly = cutter.GetOutput()
         if poly is None or poly.GetNumberOfPoints() == 0:
             self.renderer.RemoveAllViewProps()
+            self._reapply_overlay_actors()
             self._remove_scalar_bar()
             self._render()
             return
@@ -664,6 +932,7 @@ class PostprocessWidget(QMainWindow):
             use_point = False
         else:
             self.renderer.RemoveAllViewProps()
+            self._reapply_overlay_actors()
             self._remove_scalar_bar()
             self._render()
             return
@@ -672,6 +941,7 @@ class PostprocessWidget(QMainWindow):
 
         # 렌더러 초기화
         self.renderer.RemoveAllViewProps()
+        self._reapply_overlay_actors()
 
         # Mapper
         mapper = vtk.vtkPolyDataMapper()
@@ -903,6 +1173,25 @@ class PostprocessWidget(QMainWindow):
         if self.scalar_bar_actor:
             self.scalar_bar_actor = None
 
+    # ===== 오버레이 액터 (슬라이스/필드 전환 후에도 유지) =====
+
+    def add_overlay_actor(self, actor):
+        """슬라이스/필드 변경 후에도 유지되는 오버레이 액터 추가."""
+        if actor not in self._overlay_actors:
+            self._overlay_actors.append(actor)
+        self.renderer.AddActor(actor)
+
+    def clear_overlay_actors(self):
+        """모든 오버레이 액터 제거."""
+        for actor in self._overlay_actors:
+            self.renderer.RemoveActor(actor)
+        self._overlay_actors.clear()
+
+    def _reapply_overlay_actors(self):
+        """RemoveAllViewProps 이후 오버레이 액터 재추가."""
+        for actor in self._overlay_actors:
+            self.renderer.AddActor(actor)
+
     def _on_scalar_bar_toggled(self, checked: bool):
         """스칼라 바 표시 토글"""
         icon_name = "scalar_bar_on.png" if checked else "scalar_bar_off.png"
@@ -950,8 +1239,13 @@ class PostprocessWidget(QMainWindow):
 
     def cleanup(self):
         """리소스 정리"""
+        self._stop_anim()
         # 진행 중인 로딩 취소
         self._cancel_loading()
+        thread = getattr(self, '_foam_loader_thread', None)
+        if thread is not None and thread.isRunning():
+            thread.quit()
+            thread.wait(2000)
 
         try:
             if self.interactor:

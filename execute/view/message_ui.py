@@ -16,7 +16,7 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QHBoxLayout,
-    QLabel, QProgressBar, QPushButton, QSizePolicy,
+    QLabel, QPlainTextEdit, QProgressBar, QPushButton, QSizePolicy,
     QSpacerItem, QStackedWidget, QTextEdit, QVBoxLayout,
     QWidget)
 
@@ -68,13 +68,13 @@ class Ui_Form(object):
         self.verticalLayout_3 = QVBoxLayout(self.page_output)
         self.verticalLayout_3.setObjectName(u"verticalLayout_3")
         self.verticalLayout_3.setContentsMargins(0, 0, 0, 0)
-        self.textEdit_output = QTextEdit(self.page_output)
+        self.textEdit_output = QPlainTextEdit(self.page_output)
         self.textEdit_output.setObjectName(u"textEdit_output")
         self.textEdit_output.setFont(font)
         self.textEdit_output.viewport().setProperty(u"cursor", QCursor(Qt.CursorShape.IBeamCursor))
         self.textEdit_output.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.textEdit_output.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.textEdit_output.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        self.textEdit_output.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.textEdit_output.setReadOnly(True)
         self.textEdit_output.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByMouse|Qt.TextInteractionFlag.TextSelectableByKeyboard|Qt.TextInteractionFlag.TextSelectableByMouse)
 

@@ -146,8 +146,10 @@ class OpenFOAMReader:
             if hasattr(reader, 'CacheMeshOn'):
                 reader.CacheMeshOn()
 
-            # 모든 배열 활성화 (1차 Update로 배열 목록 확보 후 전체 활성화)
+            # 1차 Update: 배열 목록 및 타임스텝 정보 확보
             reader.Update()
+
+            # 모든 배열 활성화
             if hasattr(reader, 'EnableAllCellArrays'):
                 reader.EnableAllCellArrays()
             if hasattr(reader, 'EnableAllPointArrays'):
@@ -157,20 +159,29 @@ class OpenFOAMReader:
             if hasattr(reader, 'EnableAllLagrangianArrays'):
                 reader.EnableAllLagrangianArrays()
 
-            reader.Update()
             self._reader = reader
 
-            # 타임스텝 정보 추출
+            # 타임스텝 정보 추출 (1차 Update 이후 사용 가능)
             self._extract_time_values()
 
-            # 마지막 타임스텝으로 이동
+            # 마지막 타임스텝으로 시간 설정 (Update 전에 미리 설정하여 Update 횟수 절감)
             if self._time_values:
-                self.set_time(self._time_values[-1])
+                last_time = self._time_values[-1]
+                try:
+                    exec_ = reader.GetExecutive()
+                    if hasattr(exec_, 'SetUpdateTimeStep'):
+                        exec_.SetUpdateTimeStep(0, last_time)
+                except Exception:
+                    if hasattr(reader, 'SetTimeValue'):
+                        reader.SetTimeValue(last_time)
+
+            # 2차 Update: 모든 배열 + 마지막 타임스텝 데이터 로드 (2nd+3rd 통합)
+            reader.Update()
 
             # 필드 이름 추출
             self._extract_field_names()
 
-            # Surface polydata 생성 (렌더링 목적이면 메인 스레드에서 호출 가능)
+            # Surface polydata는 메인 스레드에서만 생성 (VTK 스레드 안전성)
             if build_surface:
                 self._create_surface()
 
@@ -178,6 +189,14 @@ class OpenFOAMReader:
 
         except Exception:
             return False
+
+        finally:
+            # bounds 계산은 실패해도 load 성공에 영향 없음
+            try:
+                if self._reader is not None:
+                    self._compute_bounds_fast()
+            except Exception:
+                pass
 
     def _extract_time_values(self):
         """타임스텝 값들을 추출합니다."""
@@ -227,6 +246,52 @@ class OpenFOAMReader:
         _collect_fields(mb)
         self._field_names = sorted(fields)
 
+    def _compute_bounds_fast(self):
+        """리프 블록 순회로 bounds 계산 (composite dataset은 GetBounds 호출 안 함)."""
+        if self._reader is None:
+            return
+
+        mb = self._reader.GetOutput()
+        if mb is None:
+            return
+
+        xmin = ymin = zmin = float('inf')
+        xmax = ymax = zmax = float('-inf')
+
+        def _visit(obj):
+            nonlocal xmin, xmax, ymin, ymax, zmin, zmax
+            if obj is None:
+                return
+            if hasattr(obj, 'GetNumberOfBlocks'):
+                for i in range(obj.GetNumberOfBlocks()):
+                    _visit(obj.GetBlock(i))
+                return
+            # 리프 노드에서만 GetBounds 호출 (복합 데이터셋은 건너뜀)
+            if (hasattr(obj, 'GetBounds') and hasattr(obj, 'GetNumberOfPoints')
+                    and obj.GetNumberOfPoints() > 0):
+                try:
+                    b = obj.GetBounds()
+                    if b and len(b) >= 6:
+                        xmin = min(xmin, b[0]); xmax = max(xmax, b[1])
+                        ymin = min(ymin, b[2]); ymax = max(ymax, b[3])
+                        zmin = min(zmin, b[4]); zmax = max(zmax, b[5])
+                except Exception:
+                    pass
+
+        _visit(mb)
+
+        if xmin == float('inf'):
+            return
+
+        self._bounds = (xmin, xmax, ymin, ymax, zmin, zmax)
+        self._center = (
+            0.5 * (xmin + xmax),
+            0.5 * (ymin + ymax),
+            0.5 * (zmin + zmax),
+        )
+        dx, dy, dz = xmax - xmin, ymax - ymin, zmax - zmin
+        self._diagonal_length = math.sqrt(dx*dx + dy*dy + dz*dz)
+
     def _create_surface(self):
         """외곽 surface polydata를 생성합니다."""
         if self._reader is None:
@@ -259,8 +324,22 @@ class OpenFOAMReader:
             dz = b[5] - b[4]
             self._diagonal_length = math.sqrt(dx * dx + dy * dy + dz * dz)
 
+    def update_time(self, time_value: float):
+        """애니메이션용 타임스텝 업데이트 (surface 재생성 없음, 빠른 프레임 전환).
+
+        set_time()과 달리 surface를 재생성하지 않으므로 애니메이션에 적합합니다.
+        """
+        self._set_time_no_surface(time_value)
+        self._extract_field_names()
+
     def set_time(self, time_value: float):
-        """특정 타임스텝으로 이동합니다."""
+        """특정 타임스텝으로 이동합니다 (surface 재생성 포함)."""
+        self._set_time_no_surface(time_value)
+        self._create_surface()
+        self._extract_field_names()
+
+    def _set_time_no_surface(self, time_value: float):
+        """타임스텝만 변경합니다 (surface 생성 없음, 배경 스레드 안전)."""
         if self._reader is None:
             return
 
@@ -270,10 +349,6 @@ class OpenFOAMReader:
             self._reader.SetTimeValue(time_value)
 
         self._reader.Update()
-
-        # Surface 재생성
-        self._create_surface()
-        self._extract_field_names()
 
     # ===== 데이터 접근 =====
 

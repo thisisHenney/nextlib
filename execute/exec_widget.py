@@ -4,6 +4,7 @@ import subprocess
 import time
 from functools import partial
 from pathlib import Path
+
 from PySide6.QtCore import Qt, QProcess, QProcessEnvironment, Signal, QThread, QTimer   # QMutex
 from PySide6.QtWidgets import QWidget
 from PySide6.QtGui import QTextCursor, QFontDatabase
@@ -58,9 +59,18 @@ class FindUsableCPU(QThread):
     def run(self):
         self.waiting.emit()
         _get_cpu = -1
+        _max_tries = 25  # 약 10초(25 × 0.4s) 후 타임아웃
+        _tries = 0
         while _get_cpu == -1:
             _get_cpu = get_idle_cpu(self.available_cpus, self.ratio)
             if _get_cpu != -1:
+                break
+            _tries += 1
+            if _tries >= _max_tries:
+                # 유휴 CPU를 못 찾으면 available_cpus 중 하나를 강제 선택
+                import random
+                _pool = list(self.available_cpus) if self.available_cpus else list(range(get_cpu_num()))
+                _get_cpu = random.choice(_pool) if _pool else 0
                 break
             QThread.msleep(200)
             if self.stop_message:
@@ -228,15 +238,15 @@ class ExecWidget(QWidget):
         self._output_view = self._ui.textEdit_output
         self._output_view.clear()
 
-        # Log 뷰: 가변폭 폰트 (기본 폰트)
         general_font = QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont)
         general_font.setPointSize(FONT_SIZE)
         self._log_view.setFont(general_font)
+        self._log_view.document().setMaximumBlockCount(2000)
 
-        # Output 뷰: 고정폭 폰트
         mono_font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
         mono_font.setPointSize(FONT_SIZE)
         self._output_view.setFont(mono_font)
+        self._output_view.document().setMaximumBlockCount(5000)
 
     def put_in_layout(self, layout):
         layout.addWidget(self)
@@ -457,7 +467,6 @@ class ExecWidget(QWidget):
                 self._all_msgs[proc_idx].append(text)
             else:
                 self._all_msgs[proc_idx] += text
-        # 버퍼에 추가 (리스트로 관리하여 문자열 연결 비용 제거)
         if proc_idx not in self._output_buffer:
             self._output_buffer[proc_idx] = []
         self._output_buffer[proc_idx].append(text)
@@ -468,15 +477,12 @@ class ExecWidget(QWidget):
                 self._all_msgs[proc_idx].append(text)
             else:
                 self._all_msgs[proc_idx] += text
-        # 버퍼에 추가 (리스트로 관리)
         if proc_idx not in self._output_buffer:
             self._output_buffer[proc_idx] = []
         self._output_buffer[proc_idx].append(text)
 
     def _flush_output_buffer(self):
-        """버퍼에 쌓인 출력을 GUI에 한 번에 추가 (GUI 락 방지)"""
         try:
-            # 위젯 유효성 검사
             if not self._output_view or not self._output_view.isVisible():
                 return
 
@@ -488,25 +494,19 @@ class ExecWidget(QWidget):
             if not chunks:
                 return
 
-            # 청크들을 한 번에 합침 (join은 O(n)으로 효율적)
             text = ''.join(chunks)
-
-            # 버퍼 클리어
             self._output_buffer[current_view] = []
 
             if not text:
                 return
 
-            # 텍스트 추가
             self._output_view.moveCursor(QTextCursor.MoveOperation.End)
             self._output_view.insertPlainText(text)
 
-            # 트래킹 중이면 스크롤
             if self._is_tracking:
                 scrollbar = self._output_view.verticalScrollBar()
                 scrollbar.setValue(scrollbar.maximum())
         except BaseException:
-            # 위젯 삭제, 버퍼 오류, 또는 종료 시 KeyboardInterrupt 무시
             pass
 
     def set_text(self, text='', index=0):
@@ -743,6 +743,9 @@ class ExecWidget(QWidget):
                 pass
             proc.deleteLater()
         self._procs[proc_idx] = None
+
+        # stateChanged(NotRunning)은 disconnect 이후 도착하므로 직접 갱신
+        self._procs_state[proc_idx] = QProcess.ProcessState.NotRunning
 
         # Check if process was killed (CrashExit) or user-stopped
         exit_status = args[0] if args else QProcess.ExitStatus.NormalExit

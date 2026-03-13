@@ -13,7 +13,7 @@ from typing import Optional, Union, Dict, List
 
 from PySide6.QtWidgets import QWidget, QMainWindow, QVBoxLayout, QToolBar, QComboBox, QFrame, QProgressBar, QLabel, QHBoxLayout, QSplitter
 from PySide6.QtGui import QAction, QIcon
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal, Qt, QEvent
 
 import vtkmodules.vtkRenderingOpenGL2  # noqa: F401 (OpenGL 초기화 필요)
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
@@ -24,6 +24,7 @@ import vtk
 vtk.vtkObject.GlobalWarningDisplayOff()
 
 from nextlib.vtk.camera import Camera
+from nextlib.vtk.camera.cad_style import CADInteractorStyle
 from nextlib.vtk.core import ObjectManager, ObjectAccessor, GroupAccessor
 from nextlib.vtk.core.scene_state import SceneState
 from nextlib.vtk.tool import AxesTool, RulerTool, PointProbeTool
@@ -81,6 +82,9 @@ class VtkWidgetBase(QMainWindow):
 
         self.interactor.Initialize()
 
+        # 마우스 이벤트 stuck 방지: vtk_widget Leave/FocusOut 시 버튼 강제 해제
+        self.vtk_widget.installEventFilter(self)
+
         # 기본 씬 초기화 (XZ 평면 + 45도 뷰)
         self.init_default_scene()
 
@@ -90,8 +94,8 @@ class VtkWidgetBase(QMainWindow):
         """UI 레이아웃 설정 (QMainWindow 기반)"""
         # 툴바 (QMainWindow 툴바 영역에 추가 - 플로팅/도킹 지원)
         self.toolbar = QToolBar("VTK Toolbar", self)
-        self.toolbar.setFloatable(True)
-        self.toolbar.setMovable(True)
+        self.toolbar.setFloatable(False)
+        self.toolbar.setMovable(False)
         self.addToolBar(self.toolbar)
 
         # 메인 스플리터 (씬 트리 + VTK 프레임)
@@ -1594,6 +1598,29 @@ class VtkWidgetBase(QMainWindow):
 
         except Exception as e:
             print(f"[VtkWidgetBase] Cleanup error: {e}")
+
+    def eventFilter(self, obj, event):
+        """VTK 위젯 마우스 stuck 방지: 위젯을 벗어나거나 포커스를 잃으면 버튼 강제 해제"""
+        if obj is self.vtk_widget:
+            if event.type() in (QEvent.Type.Leave, QEvent.Type.FocusOut):
+                self._release_vtk_buttons()
+        return super().eventFilter(obj, event)
+
+    def _release_vtk_buttons(self):
+        """VTK 및 CADInteractorStyle의 마우스 버튼/드래그 상태를 강제 리셋
+        Python 속성만 조작 — VTK C++ 메서드 호출 금지 (segfault 방지)"""
+        try:
+            # CADInteractorStyle Python 플래그 리셋
+            if self.interactor:
+                style = self.interactor.GetInteractorStyle()
+                if isinstance(style, CADInteractorStyle):
+                    style.reset_state()
+
+            # QVTKRenderWindowInteractor._ActiveButton Python 속성 리셋
+            if self.vtk_widget and hasattr(self.vtk_widget, '_ActiveButton'):
+                self.vtk_widget._ActiveButton = Qt.MouseButton.NoButton
+        except Exception:
+            pass
 
     def closeEvent(self, event):
         """닫기 이벤트"""

@@ -132,6 +132,14 @@ class CADInteractorStyle(vtkInteractorStyleTrackballCamera):
             self.GetInteractor().Render()
             self._sync_camera()
 
+    def reset_state(self):
+        """마우스가 위젯을 벗어나거나 포커스를 잃을 때 Python 플래그만 리셋
+        (VTK C++ 메서드 직접 호출 금지 — segfault 방지)"""
+        self._is_rotating = False
+        self._is_panning = False
+        self._shift_pressed = False
+        self._ctrl_pressed = False
+
     def _handle_double_click(self):
         """더블클릭 처리: 객체 선택/해제 토글 또는 빈 공간 클릭 시 전체 해제"""
         interactor = self.GetInteractor()

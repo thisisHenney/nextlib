@@ -44,7 +44,6 @@ class FoamUtils:
             return self.raw_data
         return self.changedatautil.to_text()
 
-    # GetDataUtil
     def has_key(self, route: str):
         return self.getdatautil.has_key(self.extract_data, route)
 
@@ -60,7 +59,6 @@ class FoamUtils:
     def get_key_name_list(self, route: str = ''):
         return self.getdatautil.get_key_name_list(self.extract_data, route)
 
-    # ChangeDataUtil
     def rename(self, route: str, new_name: str):
         if self.changedatautil is None:
             return False
@@ -89,16 +87,13 @@ class FoamUtils:
             )
         return result
 
-    # Remove
     def remove(self, route):
         return self.changedatautil.remove(route)
 
-    # Clear dictionary or list contents
     def clear(self, route):
         """Clear dictionary or list contents while keeping the structure"""
         return self.changedatautil.clear(route)
 
-    # Insert
     def insert_value(self, route: str, value,
                      show_type="auto",
                      before_key=None,

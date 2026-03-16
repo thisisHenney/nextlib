@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding:utf8 -*-
 
 from PySide6.QtGui import QIntValidator
 from PySide6.QtWidgets import QWidget
@@ -33,7 +31,6 @@ class ClientWidget(QWidget):
         ui.connect_button.clicked.connect(self.connect_to_server)
         ui.disconnect_button.clicked.connect(self.disconnect_from_server)
 
-        # ui.send_message_edit.returnPressed.connect(self.send_message)
         ui.send_button.setIcon(load_basic_icon('send.png'))
         ui.send_button.clicked.connect(self.send_message)
 

@@ -13,7 +13,7 @@ from PySide6.QtGui import QAction, QIcon, QDoubleValidator
 from PySide6.QtCore import Signal, Qt, QObject, QThread, QTimer
 from PySide6.QtWidgets import QApplication
 
-import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
+import vtkmodules.vtkRenderingOpenGL2
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 from vtkmodules.vtkRenderingCore import vtkRenderer, vtkDataSetMapper, vtkActor
 from vtkmodules.vtkCommonColor import vtkNamedColors
@@ -25,7 +25,6 @@ from .camera import Camera
 from .tool import AxesTool
 from .core import OpenFOAMReader
 
-# VTK 경고 메시지 비활성화 (vtk_widget_base.py에서도 설정되지만, 독립 사용 시를 위해 유지)
 vtk.vtkObject.GlobalWarningDisplayOff()
 
 RES_DIR = Path(__file__).resolve().parent
@@ -39,7 +38,7 @@ class FoamLoaderWorker(QObject):
     VTK reader.Update() 호출은 데이터 처리만 하므로 스레드 안전합니다.
     렌더링(actor 추가, Render())은 메인 스레드에서만 수행됩니다.
     """
-    finished = Signal(bool, str)  # (success, error_msg)
+    finished = Signal(bool, str)
 
     def __init__(self, file_path: str):
         super().__init__()
@@ -49,7 +48,6 @@ class FoamLoaderWorker(QObject):
     def run(self):
         try:
             reader = OpenFOAMReader()
-            # build_surface=False: vtkCompositeDataGeometryFilter는 메인 스레드에서만 안전
             if reader.load(self.file_path, build_surface=False):
                 self.foam_reader = reader
                 self.finished.emit(True, "")
@@ -68,30 +66,26 @@ class PostprocessWidget(QMainWindow):
     - 스칼라 바 표시
     """
 
-    case_loaded = Signal(str)  # 케이스 로드 완료 시그널
-    field_changed = Signal(str)  # 필드 변경 시그널
+    case_loaded = Signal(str)
+    field_changed = Signal(str)
 
     def __init__(self, parent=None, registry=None):
         super().__init__(parent)
         self.registry = registry
         self.camera_sync_lock = False
 
-        # OpenFOAM reader
         self.reader = None
         self.foam_reader = None
         self.field_names: list = []
         self._case_path: str = ""
 
-        # Slice control
         self.slice_enabled = False
-        self.slice_axis = "Z"  # 슬라이스 축: X, Y, Z
-        self.slice_pos: float = 0.0  # 슬라이스 위치
+        self.slice_axis = "Z"
+        self.slice_pos: float = 0.0
         self.axis_min: float = 0.0
         self.axis_max: float = 1.0
-        # 전체 bounds 저장 (xmin, xmax, ymin, ymax, zmin, zmax)
         self.bounds: tuple = (0, 1, 0, 1, 0, 1)
 
-        # Scalar bar
         self.scalar_bar_actor = None
         self.scalar_bar_widget = None
         self.scalar_bar_visible = True
@@ -100,14 +94,12 @@ class PostprocessWidget(QMainWindow):
         self._foam_loader_worker = None
         self._foam_loader_thread = None
 
-        # 애니메이션 상태
         self._anim_time_values: list = []
         self._anim_current_idx: int = 0
         self._anim_is_playing: bool = False
         self._anim_timer = QTimer(self)
         self._anim_timer.timeout.connect(self._on_anim_tick)
 
-        # Overlay actors – persist across field/slice changes
         self._overlay_actors: list = []
 
         self._setup_ui()
@@ -122,19 +114,16 @@ class PostprocessWidget(QMainWindow):
 
     def _setup_ui(self):
         """UI 레이아웃 설정 (QMainWindow 기반)"""
-        # 툴바 (QMainWindow 툴바 영역에 추가 - 플로팅/도킹 지원)
         self.toolbar = QToolBar("Postprocess Toolbar", self)
         self.toolbar.setFloatable(True)
         self.toolbar.setMovable(True)
         self.addToolBar(self.toolbar)
 
-        # VTK 위젯을 감싸는 프레임 (Styled Panel)
         self.vtk_frame = QFrame(self)
         self.vtk_frame.setFrameShape(QFrame.Shape.StyledPanel)
         self.vtk_frame.setFrameShadow(QFrame.Shadow.Sunken)
         self.vtk_frame.setLineWidth(1)
 
-        # 프레임 내부 레이아웃
         frame_layout = QVBoxLayout(self.vtk_frame)
         frame_layout.setContentsMargins(1, 1, 1, 1)
         frame_layout.setSpacing(0)
@@ -142,7 +131,6 @@ class PostprocessWidget(QMainWindow):
         self.vtk_widget = QVTKRenderWindowInteractor(self.vtk_frame)
         frame_layout.addWidget(self.vtk_widget, stretch=1)
 
-        # 프로그레스 바 컨테이너 (하단)
         self._progress_container = QFrame(self.vtk_frame)
         self._progress_container.setFixedHeight(24)
         progress_layout = QHBoxLayout(self._progress_container)
@@ -154,7 +142,7 @@ class PostprocessWidget(QMainWindow):
         progress_layout.addWidget(self._progress_label)
 
         self._progress_bar = QProgressBar()
-        self._progress_bar.setRange(0, 0)  # Indeterminate mode
+        self._progress_bar.setRange(0, 0)
         self._progress_bar.setTextVisible(False)
         self._progress_bar.setStyleSheet("""
             QProgressBar {
@@ -188,7 +176,6 @@ class PostprocessWidget(QMainWindow):
         self.vtk_widget.GetRenderWindow().AddRenderer(self.renderer)
         self.interactor = self.vtk_widget.GetRenderWindow().GetInteractor()
 
-    # ===== Progress Bar =====
 
     def show_progress(self, message: str = "Loading..."):
         """프로그레스 바 표시"""
@@ -213,28 +200,23 @@ class PostprocessWidget(QMainWindow):
 
     def _build_toolbar(self):
         """툴바 구성"""
-        # 파일 로드
         refresh = self._add_action("\u21BB", "", lambda: self.load_foam_file())
         refresh.setToolTip("Refresh")
         self.toolbar.addSeparator()
 
-        # Home
         home = self._add_action("\u2302", "", self.camera.home)
         home.setToolTip("Home")
 
-        # 6방향 뷰
         for name in ["Front", "Back", "Left", "Right", "Top", "Bottom"]:
             self._add_action(name, f"{name.lower()}.png",
                            partial(self.camera.set_view, name.lower()))
 
         self.toolbar.addSeparator()
 
-        # 줌 & 피팅
         self._add_action("Zoom In", "zoom_in.png", lambda: self.camera.zoom_in())
         self._add_action("Zoom Out", "zoom_out.png", lambda: self.camera.zoom_out())
         self._add_action("Fit", "fit.png", self.fit_to_scene)
 
-        # 투영 방식 토글
         self._projection_action = self._add_toggle_action(
             "Projection", "perspective.png", "parallel.png",
             self._on_projection_toggled, checked=False
@@ -242,13 +224,11 @@ class PostprocessWidget(QMainWindow):
 
         self.toolbar.addSeparator()
 
-        # 축 토글
         self._axes_action = self._add_toggle_action(
             "Axes", "axes_on.png", "axes_off.png",
             self._on_axes_toggled, checked=True
         )
 
-        # 스칼라 바 토글
         self._scalar_bar_action = self._add_toggle_action(
             "Scalar Bar", "scalar_bar_off.png", "scalar_bar_on.png",
             self._on_scalar_bar_toggled, checked=True
@@ -261,7 +241,6 @@ class PostprocessWidget(QMainWindow):
         ctrl_toolbar.setFloatable(True)
         ctrl_toolbar.setMovable(True)
 
-        # 필드 선택
         ctrl_toolbar.addWidget(QLabel("Field:"))
         self.field_combo = QComboBox()
         self.field_combo.setMinimumWidth(120)
@@ -270,13 +249,11 @@ class PostprocessWidget(QMainWindow):
 
         ctrl_toolbar.addSeparator()
 
-        # 슬라이스 모드 체크박스
         self.slice_check = QCheckBox("Slice")
         self.slice_check.setChecked(False)
         self.slice_check.toggled.connect(self._on_slice_toggled)
         ctrl_toolbar.addWidget(self.slice_check)
 
-        # 슬라이스 축 선택
         self.axis_combo = QComboBox()
         self.axis_combo.addItems(["X", "Y", "Z"])
         self.axis_combo.setCurrentText("Z")
@@ -284,11 +261,9 @@ class PostprocessWidget(QMainWindow):
         self.axis_combo.setEnabled(False)
         ctrl_toolbar.addWidget(self.axis_combo)
 
-        # 슬라이스 위치 라벨
         self.axis_label = QLabel("Z:")
         ctrl_toolbar.addWidget(self.axis_label)
 
-        # 슬라이스 위치 슬라이더
         self.pos_slider = QSlider(Qt.Horizontal)
         self.pos_slider.setRange(0, 1000)
         self.pos_slider.setMinimumWidth(200)
@@ -296,7 +271,6 @@ class PostprocessWidget(QMainWindow):
         self.pos_slider.setEnabled(False)
         ctrl_toolbar.addWidget(self.pos_slider)
 
-        # 슬라이스 위치 직접 입력
         self.pos_edit = QLineEdit("0.0")
         self.pos_edit.setFixedWidth(80)
         self.pos_edit.setValidator(QDoubleValidator())
@@ -313,21 +287,18 @@ class PostprocessWidget(QMainWindow):
         anim_toolbar.setFloatable(True)
         anim_toolbar.setMovable(True)
 
-        # 이전 프레임
         self._anim_prev_action = QAction("◀", self)
         self._anim_prev_action.setToolTip("Previous Time Step")
         self._anim_prev_action.triggered.connect(self._on_anim_prev)
         self._anim_prev_action.setEnabled(False)
         anim_toolbar.addAction(self._anim_prev_action)
 
-        # 재생/일시정지
         self._anim_play_action = QAction("▶", self)
         self._anim_play_action.setToolTip("Play / Pause")
         self._anim_play_action.triggered.connect(self._on_anim_play_pause)
         self._anim_play_action.setEnabled(False)
         anim_toolbar.addAction(self._anim_play_action)
 
-        # 다음 프레임
         self._anim_next_action = QAction("▶|", self)
         self._anim_next_action.setToolTip("Next Time Step")
         self._anim_next_action.triggered.connect(self._on_anim_next)
@@ -336,7 +307,6 @@ class PostprocessWidget(QMainWindow):
 
         anim_toolbar.addSeparator()
 
-        # 타임스텝 슬라이더
         self._anim_slider = QSlider(Qt.Horizontal)
         self._anim_slider.setRange(0, 0)
         self._anim_slider.setMinimumWidth(80)
@@ -345,7 +315,6 @@ class PostprocessWidget(QMainWindow):
         self._anim_slider.valueChanged.connect(self._on_anim_slider_changed)
         anim_toolbar.addWidget(self._anim_slider)
 
-        # 현재 시간값 표시 (에디트 콤보박스)
         self._anim_time_combo = QComboBox()
         self._anim_time_combo.setEditable(True)
         self._anim_time_combo.setMinimumWidth(110)
@@ -355,14 +324,12 @@ class PostprocessWidget(QMainWindow):
         self._anim_time_combo.lineEdit().editingFinished.connect(self._on_anim_time_combo_edited)
         anim_toolbar.addWidget(self._anim_time_combo)
 
-        # 프레임 카운터
         self._anim_frame_label = QLabel("0 / 0")
         self._anim_frame_label.setMinimumWidth(60)
         anim_toolbar.addWidget(self._anim_frame_label)
 
         anim_toolbar.addSeparator()
 
-        # FPS 설정
         anim_toolbar.addWidget(QLabel("FPS:"))
         self._anim_fps_spin = QSpinBox()
         self._anim_fps_spin.setRange(1, 60)
@@ -401,11 +368,10 @@ class PostprocessWidget(QMainWindow):
 
     def _set_background(self):
         """배경색 설정 - Fusion 360 스타일 화이트 그라데이션"""
-        self.renderer.SetBackground(0.75, 0.78, 0.82)   # 하단 (미디엄 그레이)
-        self.renderer.SetBackground2(0.98, 0.98, 1.0)   # 상단 (거의 흰색)
+        self.renderer.SetBackground(0.75, 0.78, 0.82)
+        self.renderer.SetBackground2(0.98, 0.98, 1.0)
         self.renderer.GradientBackgroundOn()
 
-    # ===== 파일 로딩 =====
 
     def set_case_path(self, case_path: str):
         """케이스 폴더 경로 등록 (Refresh 버튼에서 사용)"""
@@ -422,7 +388,6 @@ class PostprocessWidget(QMainWindow):
             self.load_foam(case_path)
             return
 
-        # 등록된 경로가 있으면 새로고침
         if self._case_path:
             self.load_foam(self._case_path)
             return
@@ -438,7 +403,6 @@ class PostprocessWidget(QMainWindow):
 
     def load_foam(self, file_path: str):
         """OpenFOAM 케이스 비동기 로드 (.foam 파일 또는 케이스 폴더)"""
-        # OpenFOAMReader 사용 가능 여부 확인
         if not OpenFOAMReader.is_available():
             QMessageBox.warning(
                 self, "Module Not Found",
@@ -452,7 +416,6 @@ class PostprocessWidget(QMainWindow):
 
         path = Path(file_path)
         if path.is_dir() and not OpenFOAMReader.is_openfoam_case(path):
-            # 서브폴더에서 유효한 케이스 탐색 (최상위 폴더 선택 시 자동 인식)
             found = None
             for sub in ("5.CHTFCase", "CHTFCase", "fluid", "run"):
                 sp = path / sub
@@ -481,16 +444,13 @@ class PostprocessWidget(QMainWindow):
                 )
                 return
 
-        # 중복 로딩 방지
         if self._loading:
             return
         self._loading = True
 
-        # 인-위젯 프로그레스 바 표시 + 대기 커서
         self.show_progress("Loading case...")
         QApplication.setOverrideCursor(Qt.WaitCursor)
 
-        # 백그라운드 스레드에서 데이터 로드 (build_surface=False: 렌더링 객체 생성 없음)
         self._foam_loader_worker = FoamLoaderWorker(file_path)
         self._foam_loader_thread = QThread(self)
         self._foam_loader_worker.moveToThread(self._foam_loader_thread)
@@ -530,47 +490,39 @@ class PostprocessWidget(QMainWindow):
         """OpenFOAM 케이스 로드 완료 처리"""
         self.hide_progress()
 
-        # VTK 리더 참조 (기존 코드 호환용)
         self.reader = self.foam_reader.get_reader()
 
-        # 필드 목록
         self.field_names = self.foam_reader.get_field_names()
         self.field_combo.blockSignals(True)
         self.field_combo.clear()
         self.field_combo.addItems(self.field_names)
         self.field_combo.blockSignals(False)
 
-        # Bounds 저장
         bounds = self.foam_reader.get_bounds()
         if bounds:
             self.bounds = bounds
         else:
             self.bounds = (0, 1, 0, 1, 0, 1)
 
-        # 현재 축에 맞는 범위 설정
         self._update_axis_range()
 
-        # 슬라이더/입력 활성화
         self.pos_slider.setEnabled(True)
         self.pos_edit.setEnabled(True)
         self.axis_combo.setEnabled(True)
         self.slice_pos = (self.axis_min + self.axis_max) / 2.0
         self._update_slider_position()
 
-        # 애니메이션 컨트롤 초기화
         self._anim_time_values = self.foam_reader.get_time_values()
         self._anim_current_idx = len(self._anim_time_values) - 1 if self._anim_time_values else 0
         self._anim_is_playing = False
         self._anim_timer.stop()
         self._update_anim_ui()
 
-        # 기본 필드 표시
         if self.field_names:
             self._display_field()
 
         self.fit_to_scene()
 
-        # 케이스 경로 저장 및 시그널 발생
         case_path = self.foam_reader._case_path if hasattr(self.foam_reader, '_case_path') else None
         self.case_loaded.emit(str(case_path) if case_path else "")
 
@@ -635,7 +587,6 @@ class PostprocessWidget(QMainWindow):
         else:
             self.zmin, self.zmax = 0.0, 1.0
 
-    # ===== 애니메이션 =====
 
     def _update_anim_ui(self):
         """애니메이션 컨트롤 UI 상태 갱신"""
@@ -684,7 +635,6 @@ class PostprocessWidget(QMainWindow):
         t = self._anim_time_values[idx]
         self.foam_reader.update_time(t)
 
-        # 필드 목록 갱신 (타임스텝마다 달라질 수 있음)
         new_fields = self.foam_reader.get_field_names()
         if new_fields != self.field_names:
             self.field_names = new_fields
@@ -760,7 +710,6 @@ class PostprocessWidget(QMainWindow):
             self._stop_anim()
         self._goto_time_index(closest)
 
-    # ===== 필드 시각화 =====
 
     def _on_field_changed(self):
         """필드 선택 변경"""
@@ -789,7 +738,6 @@ class PostprocessWidget(QMainWindow):
         if mb is None:
             return
 
-        # 해당 필드를 가진 블록만 병합
         append = vtkAppendFilter()
         append.MergePointsOn()
 
@@ -825,7 +773,6 @@ class PostprocessWidget(QMainWindow):
             self._render()
             return
 
-        # 필드가 Point/Cell 어디에 있는지 확인
         pd_ug = ug.GetPointData()
         cd_ug = ug.GetCellData()
 
@@ -845,7 +792,6 @@ class PostprocessWidget(QMainWindow):
             self._render()
             return
 
-        # Mapper 설정
         self.renderer.RemoveAllViewProps()
         self._reapply_overlay_actors()
 
@@ -864,11 +810,9 @@ class PostprocessWidget(QMainWindow):
             data_range = arr.GetRange()
             mapper.SetScalarRange(data_range)
 
-            # Blue-to-Red 컬러맵 적용
             lut = self._create_blue_to_red_lut(data_range)
             mapper.SetLookupTable(lut)
 
-            # Scalar bar 업데이트
             if self.scalar_bar_visible:
                 self._create_scalar_bar(mapper, field, data_range)
 
@@ -884,7 +828,6 @@ class PostprocessWidget(QMainWindow):
         if self.reader is None:
             return
 
-        # 필드 데이터셋 생성
         ug = self._build_field_dataset(field)
         if ug is None:
             self.renderer.RemoveAllViewProps()
@@ -893,7 +836,6 @@ class PostprocessWidget(QMainWindow):
             self._render()
             return
 
-        # 축에 따른 슬라이스 평면 설정
         plane = vtk.vtkPlane()
         if self.slice_axis == "X":
             plane.SetNormal(1, 0, 0)
@@ -901,7 +843,7 @@ class PostprocessWidget(QMainWindow):
         elif self.slice_axis == "Y":
             plane.SetNormal(0, 1, 0)
             plane.SetOrigin(0, self.slice_pos, 0)
-        else:  # Z
+        else:
             plane.SetNormal(0, 0, 1)
             plane.SetOrigin(0, 0, self.slice_pos)
 
@@ -939,11 +881,9 @@ class PostprocessWidget(QMainWindow):
 
         data_range = arr.GetRange()
 
-        # 렌더러 초기화
         self.renderer.RemoveAllViewProps()
         self._reapply_overlay_actors()
 
-        # Mapper
         mapper = vtk.vtkPolyDataMapper()
         mapper.SetInputData(poly)
         mapper.SetScalarVisibility(True)
@@ -955,11 +895,9 @@ class PostprocessWidget(QMainWindow):
             mapper.SetScalarModeToUseCellFieldData()
         mapper.SetScalarRange(data_range)
 
-        # Blue-to-Red 컬러맵 적용
         lut = self._create_blue_to_red_lut(data_range)
         mapper.SetLookupTable(lut)
 
-        # Scalar bar
         if self.scalar_bar_visible:
             self._create_scalar_bar(mapper, field, data_range)
 
@@ -1006,7 +944,6 @@ class PostprocessWidget(QMainWindow):
 
         return ug
 
-    # ===== 슬라이스 컨트롤 =====
 
     def _on_slice_toggled(self, checked: bool):
         """슬라이스 모드 토글"""
@@ -1036,7 +973,7 @@ class PostprocessWidget(QMainWindow):
         elif self.slice_axis == "Y":
             self.axis_min = self.bounds[2]
             self.axis_max = self.bounds[3]
-        else:  # Z
+        else:
             self.axis_min = self.bounds[4]
             self.axis_max = self.bounds[5]
 
@@ -1047,7 +984,6 @@ class PostprocessWidget(QMainWindow):
         ratio = value / 1000.0
         self.slice_pos = self.axis_min + (self.axis_max - self.axis_min) * ratio
 
-        # 입력창 업데이트 (시그널 차단)
         self.pos_edit.blockSignals(True)
         self.pos_edit.setText(f"{self.slice_pos:.4f}")
         self.pos_edit.blockSignals(False)
@@ -1059,14 +995,12 @@ class PostprocessWidget(QMainWindow):
         """위치 직접 입력 완료"""
         try:
             value = float(self.pos_edit.text())
-            # 범위 제한
             value = max(self.axis_min, min(self.axis_max, value))
             self.slice_pos = value
             self._update_slider_position()
             if self.slice_enabled:
                 self._display_field()
         except ValueError:
-            # 잘못된 입력이면 현재 값으로 복원
             self.pos_edit.setText(f"{self.slice_pos:.4f}")
 
     def _update_slider_position(self):
@@ -1084,7 +1018,6 @@ class PostprocessWidget(QMainWindow):
         self.pos_edit.setText(f"{self.slice_pos:.4f}")
         self.pos_edit.blockSignals(False)
 
-    # ===== 스칼라 바 =====
 
     def _create_blue_to_red_lut(self, data_range: tuple):
         """파란색(낮음) → 빨간색(높음) 컬러맵 룩업테이블 생성"""
@@ -1092,8 +1025,6 @@ class PostprocessWidget(QMainWindow):
         lut.SetNumberOfTableValues(256)
         lut.SetRange(data_range)
 
-        # Blue (low) → Red (high)
-        # Hue: 0.667 (blue) → 0.0 (red)
         lut.SetHueRange(0.667, 0.0)
         lut.SetSaturationRange(1.0, 1.0)
         lut.SetValueRange(1.0, 1.0)
@@ -1110,7 +1041,6 @@ class PostprocessWidget(QMainWindow):
         scalar_bar.SetTitle(title)
         scalar_bar.SetNumberOfLabels(7)
 
-        # 레이아웃
         scalar_bar.SetTextPositionToPrecedeScalarBar()
         scalar_bar.SetBarRatio(0.25)
         scalar_bar.SetTitleRatio(0.35)
@@ -1118,46 +1048,40 @@ class PostprocessWidget(QMainWindow):
         scalar_bar.SetUnconstrainedFontSize(True)
         scalar_bar.SetFixedAnnotationLeaderLineColor(True)
 
-        # 배경/프레임 비활성화
         scalar_bar.SetDrawBackground(False)
         scalar_bar.SetDrawFrame(False)
 
-        # 제목 스타일 (ParaView: 흰색, 볼드, Arial, 그림자)
         title_prop = scalar_bar.GetTitleTextProperty()
         title_prop.SetFontFamilyToArial()
         title_prop.SetFontSize(24)
         title_prop.SetBold(True)
         title_prop.SetItalic(False)
-        title_prop.SetColor(0.2, 0.2, 0.25)  # Fusion 360 스타일: 다크 그레이
+        title_prop.SetColor(0.2, 0.2, 0.25)
         title_prop.SetShadow(False)
 
-        # 라벨 스타일 (Fusion 360: 다크 그레이, Arial)
         label_prop = scalar_bar.GetLabelTextProperty()
         label_prop.SetFontFamilyToArial()
         label_prop.SetFontSize(16)
         label_prop.SetBold(False)
         label_prop.SetItalic(False)
-        label_prop.SetColor(0.2, 0.2, 0.25)  # Fusion 360 스타일: 다크 그레이
+        label_prop.SetColor(0.2, 0.2, 0.25)
         label_prop.SetShadow(False)
         label_prop.SetJustificationToLeft()
 
-        # Annotation 텍스트 스타일
         ann_prop = scalar_bar.GetAnnotationTextProperty()
         ann_prop.SetFontFamilyToArial()
         ann_prop.SetFontSize(10)
-        ann_prop.SetColor(0.2, 0.2, 0.25)  # Fusion 360 스타일: 다크 그레이
+        ann_prop.SetColor(0.2, 0.2, 0.25)
         ann_prop.SetShadow(False)
 
         self.scalar_bar_actor = scalar_bar
 
-        # vtkScalarBarWidget으로 감싸서 드래그 이동/리사이즈 가능하게
         widget = vtk.vtkScalarBarWidget()
         widget.SetInteractor(self.interactor)
         widget.SetScalarBarActor(scalar_bar)
         widget.SetRepositionable(True)
         widget.SetResizable(True)
 
-        # 초기 위치/크기
         rep = widget.GetRepresentation()
         rep.SetPosition(0.87, 0.08)
         rep.SetPosition2(0.12, 0.72)
@@ -1173,7 +1097,6 @@ class PostprocessWidget(QMainWindow):
         if self.scalar_bar_actor:
             self.scalar_bar_actor = None
 
-    # ===== 오버레이 액터 (슬라이스/필드 전환 후에도 유지) =====
 
     def add_overlay_actor(self, actor):
         """슬라이스/필드 변경 후에도 유지되는 오버레이 액터 추가."""
@@ -1204,7 +1127,6 @@ class PostprocessWidget(QMainWindow):
             self._remove_scalar_bar()
             self._render()
 
-    # ===== 뷰 컨트롤 =====
 
     def _on_axes_toggled(self, checked: bool):
         """축 표시 토글"""
@@ -1235,12 +1157,10 @@ class PostprocessWidget(QMainWindow):
         except:
             pass
 
-    # ===== 정리 =====
 
     def cleanup(self):
         """리소스 정리"""
         self._stop_anim()
-        # 진행 중인 로딩 취소
         self._cancel_loading()
         thread = getattr(self, '_foam_loader_thread', None)
         if thread is not None and thread.isRunning():
@@ -1250,7 +1170,6 @@ class PostprocessWidget(QMainWindow):
         try:
             if self.interactor:
                 self.interactor.Disable()
-                # NOTE: TerminateApp()은 QApplication.quit()을 호출하므로 사용하지 않음
                 self.interactor = None
 
             if self.renderer:
@@ -1270,7 +1189,6 @@ class PostprocessWidget(QMainWindow):
 
     def closeEvent(self, event):
         """닫기 이벤트 - dock에 embed된 경우 앱 종료 방지"""
-        # 부모가 있으면 dock 내부에 embed된 것이므로 이벤트를 무시
         if self.parent() is not None:
             event.ignore()
             return

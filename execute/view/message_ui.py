@@ -1,12 +1,4 @@
-# -*- coding: utf-8 -*-
 
-################################################################################
-## Form generated from reading UI file 'message.ui'
-##
-## Created by: Qt User Interface Compiler version 6.10.0
-##
-## WARNING! All changes made in this file will be lost when recompiling UI file!
-################################################################################
 
 from PySide6.QtCore import (QCoreApplication, QDate, QDateTime, QLocale,
     QMetaObject, QObject, QPoint, QRect,
@@ -178,7 +170,6 @@ class Ui_Form(object):
 
 
         QMetaObject.connectSlotsByName(Form)
-    # setupUi
 
     def retranslateUi(self, Form):
         Form.setWindowTitle(QCoreApplication.translate("Form", u"Form", None))
@@ -188,5 +179,4 @@ class Ui_Form(object):
         self.checkBox_tracking.setText(QCoreApplication.translate("Form", u"Tracking", None))
         self.pushButton_clear.setText(QCoreApplication.translate("Form", u"Clear View", None))
         self.progressBar.setFormat(QCoreApplication.translate("Form", u"%p %", None))
-    # retranslateUi
 

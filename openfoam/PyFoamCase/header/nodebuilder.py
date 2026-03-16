@@ -83,7 +83,6 @@ class NodeBuilder:
             if isinstance(value, dict):
                 open_line = self._find_next_char_line("{", line, end_line)
                 if open_line is None:
-                    # regions 같은 소괄호 기반 문법은 dict라도 { } 블록이 없음
                     item_line = self._find_next_non_empty(line - 1)
                     if item_line is None or item_line > end_line:
                         break

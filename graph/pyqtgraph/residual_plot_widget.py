@@ -7,7 +7,6 @@ import pyqtgraph as pg
 
 
 class ResidualPlotWidget(QMainWindow):
-    # Signal emitted when refresh button is clicked
     refresh_requested = Signal()
 
     def __init__(self, parent=None):
@@ -15,11 +14,10 @@ class ResidualPlotWidget(QMainWindow):
 
         self.data = None
         self._current_log_path = None
-        self._target_vars = None  # None = all variables
+        self._target_vars = None
         self._drag_enabled = True
         self._auto_arrange = True
 
-        # 증분 파싱 상태
         self._incr_offset: int = 0
         self._incr_data: dict = {'time': [], 'residuals': {}}
         self._incr_partial_time = None
@@ -30,13 +28,11 @@ class ResidualPlotWidget(QMainWindow):
 
     def _setup_ui(self):
         """UI layout setup (QMainWindow-based)."""
-        # Toolbar (floatable, movable)
         self.toolbar = QToolBar("Residual Toolbar", self)
         self.toolbar.setFloatable(True)
         self.toolbar.setMovable(True)
         self.addToolBar(self.toolbar)
 
-        # Plot frame (Styled Panel)
         self.plot_frame = QFrame(self)
         self.plot_frame.setFrameShape(QFrame.Shape.StyledPanel)
         self.plot_frame.setFrameShadow(QFrame.Shadow.Sunken)
@@ -51,13 +47,11 @@ class ResidualPlotWidget(QMainWindow):
 
         self.setCentralWidget(self.plot_frame)
 
-        # Plot configuration
         self.plot_widget.setLogMode(y=True)
         self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
         self.plot_widget.setLabel('bottom', 'Time')
         self.plot_widget.setLabel('left', 'Residual')
 
-        # Curve styles
         self.curve_style = {
             'Ux':      dict(pen=pg.mkPen(color='r',                  width=2)),
             'Uy':      dict(pen=pg.mkPen(color='g',                  width=2)),
@@ -68,7 +62,6 @@ class ResidualPlotWidget(QMainWindow):
             'h':       dict(pen=pg.mkPen(color=(255, 200, 0),        width=2)),
             'rho':     dict(pen=pg.mkPen(color=(180, 100, 255),      width=2)),
         }
-        # Fallback colors for unexpected variables not in curve_style
         self._fallback_colors = [
             (200, 200, 200), (100, 255, 150), (255, 100, 150),
             (100, 200, 255), (255, 180, 100),
@@ -76,7 +69,6 @@ class ResidualPlotWidget(QMainWindow):
 
     def _build_toolbar(self):
         """Build toolbar with actions."""
-        # Refresh
         self._refresh_action = QAction("\u21BB", self)
         self._refresh_action.setToolTip("Refresh")
         self._refresh_action.triggered.connect(self._on_refresh)
@@ -84,7 +76,6 @@ class ResidualPlotWidget(QMainWindow):
 
         self.toolbar.addSeparator()
 
-        # Drag/Pan toggle
         self._drag_action = QAction("\u2726", self)
         self._drag_action.setToolTip("Drag/Pan: On")
         self._drag_action.setCheckable(True)
@@ -92,7 +83,6 @@ class ResidualPlotWidget(QMainWindow):
         self._drag_action.triggered.connect(self._on_drag_toggled)
         self.toolbar.addAction(self._drag_action)
 
-        # Auto Arrange toggle
         self._auto_action = QAction("\u2922", self)
         self._auto_action.setToolTip("Auto Arrange: On")
         self._auto_action.setCheckable(True)
@@ -129,7 +119,6 @@ class ResidualPlotWidget(QMainWindow):
         if not Path(log_path).is_file():
             return
 
-        # 파일 경로나 target_vars가 바뀌면 전체 재파싱
         if log_path != self._current_log_path or target_vars != self._target_vars:
             self.reset_incremental()
             self._current_log_path = log_path
@@ -146,7 +135,6 @@ class ResidualPlotWidget(QMainWindow):
 
                 m = time_re.match(line_s)
                 if m:
-                    # 이전 타임스텝 플러시
                     if self._incr_partial_time is not None and self._incr_partial_res:
                         self._incr_data['time'].append(self._incr_partial_time)
                         n = len(self._incr_data['time'])
@@ -191,15 +179,13 @@ class ResidualPlotWidget(QMainWindow):
         self.refresh_requested.emit()
 
     def parse_log_file(self, path: str, target_vars=None):
-        # time → {var: last_final_residual} per timestep
-        # target_vars: set/list of variable names to collect, None = all
         time_values = []
-        residuals = {}   # var -> [value per timestep]
+        residuals = {}
 
         target_vars = set(target_vars) if target_vars is not None else None
 
         current_time = None
-        current_res = {}  # var -> latest Final residual in this timestep
+        current_res = {}
 
         time_re = re.compile(r"^Time = ([0-9.eE+-]+)")
         res_re  = re.compile(r"Solving for (\w+),.*?Final residual = ([0-9.eE+-]+)")
@@ -210,12 +196,10 @@ class ResidualPlotWidget(QMainWindow):
 
                 m = time_re.match(line)
                 if m:
-                    # Flush previous timestep
                     if current_time is not None:
                         time_values.append(current_time)
                         for var, val in current_res.items():
                             residuals.setdefault(var, []).append(val)
-                        # Fill missing vars with None for this timestep
                         for var in residuals:
                             if len(residuals[var]) < len(time_values):
                                 residuals[var].append(None)
@@ -228,10 +212,8 @@ class ResidualPlotWidget(QMainWindow):
                     var = m.group(1)
                     if target_vars is None or var in target_vars:
                         val = float(m.group(2))
-                        # Keep maximum across regions (CHTMultiRegionFoam reports same var per region)
                         current_res[var] = max(current_res.get(var, 0.0), val)
 
-        # Flush last timestep
         if current_time is not None and current_res:
             time_values.append(current_time)
             for var, val in current_res.items():
@@ -258,7 +240,6 @@ class ResidualPlotWidget(QMainWindow):
 
         fallback_idx = 0
         for key, values in res.items():
-            # Filter out None (missing timesteps) and align time axis
             pairs = [(t, v) for t, v in zip(time, values) if v is not None]
             if not pairs:
                 continue

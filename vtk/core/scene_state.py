@@ -58,7 +58,6 @@ class SceneState:
     def __init__(self, widget: "VtkWidgetBase"):
         self._widget = widget
 
-    # ===== 선택 정보 =====
 
     @property
     def selected_count(self) -> int:
@@ -99,7 +98,6 @@ class SceneState:
             return self._get_object_info(obj_id)
         return None
 
-    # ===== 객체 정보 =====
 
     @property
     def object_count(self) -> int:
@@ -143,7 +141,6 @@ class SceneState:
                 for obj in self._widget.obj_manager.get_all()
                 if obj.group == group]
 
-    # ===== 뷰 정보 =====
 
     @property
     def view_style(self) -> str:
@@ -172,7 +169,6 @@ class SceneState:
         """눈금자 표시 여부"""
         return self._widget.ruler.is_visible()
 
-    # ===== 씬 바운딩 박스 =====
 
     @property
     def bounds(self) -> Tuple[float, float, float, float, float, float]:
@@ -199,7 +195,6 @@ class SceneState:
         s = self.size
         return (s[0]**2 + s[1]**2 + s[2]**2) ** 0.5
 
-    # ===== 카메라 정보 =====
 
     @property
     def camera_position(self) -> Tuple[float, float, float]:
@@ -216,7 +211,6 @@ class SceneState:
         """카메라 상향 벡터"""
         return self._widget.renderer.GetActiveCamera().GetViewUp()
 
-    # ===== 요약 정보 =====
 
     def summary(self) -> Dict:
         """전체 상태 요약 딕셔너리"""
@@ -244,7 +238,6 @@ class SceneState:
             f"projection='{self.projection_mode}')"
         )
 
-    # ===== 헬퍼 =====
 
     def _get_object_info(self, obj_id: int) -> Optional[ObjectInfo]:
         """ObjectData를 ObjectInfo로 변환"""
@@ -252,7 +245,6 @@ class SceneState:
         if not obj:
             return None
 
-        # Actor에서 현재 색상 가져오기
         prop = obj.actor.GetProperty()
         color = prop.GetColor()
         color_rgb = (int(color[0]*255), int(color[1]*255), int(color[2]*255))

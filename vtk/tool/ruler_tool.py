@@ -27,7 +27,6 @@ class RulerTool(QObject):
         self._visible = False
         self._actor = None
 
-        # 축 색상 초기화
         colors = vtkNamedColors()
         self._axis_x_color = colors.GetColor3d("orangered")
         self._axis_y_color = colors.GetColor3d("green_yellow")
@@ -40,15 +39,12 @@ class RulerTool(QObject):
             actors: 바운딩 박스 계산에 사용할 액터 리스트 (None이면 씬 전체)
             scale: 바운딩 박스 확장 비율
         """
-        # 기존 액터 제거
         if self._actor:
             self._renderer.RemoveActor(self._actor)
             self._actor = None
 
-        # bounds 계산
         bounds = self._calculate_bounds(actors, scale)
 
-        # CubeAxesActor 생성
         actor = vtkCubeAxesActor()
         actor.SetCamera(self._renderer.GetActiveCamera())
         actor.SetBounds(bounds)
@@ -101,17 +97,14 @@ class RulerTool(QObject):
         xmin, ymin, zmin = np.min(all_bounds[:, [0, 2, 4]], axis=0)
         xmax, ymax, zmax = np.max(all_bounds[:, [1, 3, 5]], axis=0)
 
-        # 중심점
         cx = (xmin + xmax) / 2
         cy = (ymin + ymax) / 2
         cz = (zmin + zmax) / 2
 
-        # 스케일 적용
         sx = (xmax - xmin) * scale / 2
         sy = (ymax - ymin) * scale / 2
         sz = (zmax - zmin) * scale / 2
 
-        # 최소 크기 보장
         if sx == 0 and sy == 0 and sz == 0:
             sx = sy = sz = 0.5
 
@@ -125,25 +118,21 @@ class RulerTool(QObject):
         """스타일 적용"""
         actor.SetUseTextActor3D(False)
 
-        # 축별 색상 설정
         colors = [self._axis_x_color, self._axis_y_color, self._axis_z_color]
         for i, color in enumerate(colors):
             actor.GetTitleTextProperty(i).SetColor(color)
             actor.GetTitleTextProperty(i).SetFontSize(64)
             actor.GetLabelTextProperty(i).SetColor(color)
 
-        # 그리드 라인 설정
         actor.DrawXGridlinesOn()
         actor.DrawYGridlinesOn()
         actor.DrawZGridlinesOn()
         actor.SetGridLineLocation(actor.VTK_GRID_LINES_FURTHEST)
 
-        # 마이너 틱 설정
         actor.XAxisMinorTickVisibilityOn()
         actor.YAxisMinorTickVisibilityOn()
         actor.ZAxisMinorTickVisibilityOn()
 
-        # 외곽 모드
         actor.SetFlyModeToOuterEdges()
 
     def set_axis_colors(self, x_color: str, y_color: str, z_color: str):

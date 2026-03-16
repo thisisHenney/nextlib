@@ -21,12 +21,10 @@ logger = logging.getLogger(__name__)
 class DialogBoxConfig:
     """다이얼로그 설정 관리"""
 
-    # 경로 기억 기능
     last_dir_path: Path = Path.home()
     last_file_path: Path = Path.home()
     remember_paths: bool = True
 
-    # 기본 설정
     confirm_overwrite: bool = True
 
 
@@ -52,18 +50,15 @@ class DirDialogBox:
         Returns:
             선택된 폴더 경로 (Path) 또는 None
         """
-        # 시작 경로 결정
         if path is None and DialogBoxConfig.remember_paths:
             start_path = DialogBoxConfig.last_dir_path
         elif path is None:
             start_path = Path.home()
         else:
             start_path = Path(path)
-            # 존재하지 않는 경로면 홈으로 폴백
             if not start_path.exists():
                 start_path = Path.home()
 
-        # 폴더 선택 다이얼로그
         result = QFileDialog.getExistingDirectory(
             parent,
             title,
@@ -74,7 +69,6 @@ class DirDialogBox:
         if result:
             result_path = Path(result)
 
-            # 경로 기억
             if remember_path and DialogBoxConfig.remember_paths:
                 DialogBoxConfig.last_dir_path = result_path
 
@@ -121,7 +115,6 @@ class DirDialogBox:
         if result:
             result_path = Path(result)
 
-            # 폴더가 없으면 생성
             if not result_path.exists():
                 try:
                     result_path.mkdir(parents=True, exist_ok=True)
@@ -173,17 +166,14 @@ class FileDialogBox:
                 validate=lambda p: p.stat().st_size < 10*1024*1024
             )
         """
-        # 시작 경로 결정
         if path is None and DialogBoxConfig.remember_paths:
             start_path = DialogBoxConfig.last_file_path
         elif path is None:
             start_path = Path.home()
         else:
             start_path = Path(path)
-            # 파일 경로면 부모 디렉토리 사용
             if start_path.is_file():
                 start_path = start_path.parent
-            # 존재하지 않으면 홈으로
             if not start_path.exists():
                 start_path = Path.home()
 
@@ -198,7 +188,6 @@ class FileDialogBox:
             if selected:
                 result = Path(selected[0])
 
-                # 커스텀 검증
                 if validate:
                     try:
                         if not validate(result):
@@ -214,7 +203,6 @@ class FileDialogBox:
                         logger.error(f"Validation error: {e}")
                         return None
 
-                # 경로 기억
                 if remember_path and DialogBoxConfig.remember_paths:
                     DialogBoxConfig.last_file_path = result.parent
 
@@ -268,7 +256,6 @@ class FileDialogBox:
             if selected:
                 results = [Path(f) for f in selected]
 
-                # 검증
                 if validate:
                     valid_results = []
                     invalid_count = 0
@@ -293,7 +280,6 @@ class FileDialogBox:
 
                     results = valid_results
 
-                # 경로 기억
                 if results and remember_path and DialogBoxConfig.remember_paths:
                     DialogBoxConfig.last_file_path = results[0].parent
 
@@ -344,11 +330,9 @@ class FileDialogBox:
         dlg.setNameFilter(filters)
         dlg.setDirectory(str(start_path))
 
-        # 기본 파일명 설정
         if default_filename:
             dlg.selectFile(default_filename)
 
-        # 덮어쓰기 확인 설정
         if confirm_overwrite is None:
             confirm_overwrite = DialogBoxConfig.confirm_overwrite
 
@@ -360,7 +344,6 @@ class FileDialogBox:
             if selected:
                 result = Path(selected[0])
 
-                # 확장자가 없으면 필터에서 추출하여 추가
                 if not result.suffix and filters != "All Files (*)":
                     import re
                     match = re.search(r'\*\.(\w+)', filters)
@@ -368,7 +351,6 @@ class FileDialogBox:
                         ext = match.group(1)
                         result = result.with_suffix(f'.{ext}')
 
-                # 경로 기억
                 if remember_path and DialogBoxConfig.remember_paths:
                     DialogBoxConfig.last_file_path = result.parent
 
@@ -378,7 +360,6 @@ class FileDialogBox:
         return None
 
 
-# 편의 함수들
 def select_folder(parent=None, title: str = "Select folder") -> Optional[Path]:
     """빠른 폴더 선택"""
     return DirDialogBox.open_folder(parent, title)
@@ -399,7 +380,6 @@ def save_as(parent=None, title: str = "Save as", filters: str = "All Files (*)",
     return FileDialogBox.save_file(parent, title, filters, default_filename=default_filename)
 
 
-# 자주 사용하는 필터들
 class CommonFilters:
     """자주 사용하는 파일 필터"""
 

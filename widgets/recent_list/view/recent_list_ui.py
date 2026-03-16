@@ -1,12 +1,4 @@
-# -*- coding: utf-8 -*-
 
-################################################################################
-## Form generated from reading UI file 'recent_list.ui'
-##
-## Created by: Qt User Interface Compiler version 6.4.3
-##
-## WARNING! All changes made in this file will be lost when recompiling UI file!
-################################################################################
 
 from PySide6.QtCore import (QCoreApplication, QDate, QDateTime, QLocale,
     QMetaObject, QObject, QPoint, QRect,
@@ -104,9 +96,7 @@ class Ui_RecentListForm(object):
         self.retranslateUi(RecentListForm)
 
         QMetaObject.connectSlotsByName(RecentListForm)
-    # setupUi
 
     def retranslateUi(self, RecentListForm):
         RecentListForm.setWindowTitle(QCoreApplication.translate("RecentListForm", u"Form", None))
         self.lineEdit_search.setPlaceholderText(QCoreApplication.translate("RecentListForm", u"Search...", None))
-    # retranslateUi

@@ -27,7 +27,6 @@ from vtkmodules.vtkRenderingCore import vtkPolyDataMapper, vtkActor
 class GeometrySource:
     """기본 VTK 형상 생성기"""
 
-    # 기본 색상 - Fusion 360 스타일 미디엄 그레이
     DEFAULT_COLOR = (153, 166, 179)
 
     @staticmethod
@@ -188,7 +187,6 @@ class GeometrySource:
         source = vtkPlaneSource()
         source.SetXResolution(x_resolution)
         source.SetYResolution(y_resolution)
-        # PlaneSource는 기본 크기가 1x1이므로 스케일로 조정
         source.SetOrigin(-x_length/2, -y_length/2, 0)
         source.SetPoint1(x_length/2, -y_length/2, 0)
         source.SetPoint2(-x_length/2, y_length/2, 0)

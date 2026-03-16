@@ -23,16 +23,13 @@ class AxesTool(QObject):
         self._interactor = widget.interactor
         self._visible = False
 
-        # Axes Actor 생성
         self._axes_actor = vtkAxesActor()
 
-        # Orientation Marker Widget 설정
         self._marker_widget = vtkOrientationMarkerWidget()
         self._marker_widget.SetOrientationMarker(self._axes_actor)
         self._marker_widget.SetInteractor(self._interactor)
-        self._marker_widget.SetViewport(0.0, 0.0, 0.2, 0.2)  # 좌하단 20%
+        self._marker_widget.SetViewport(0.0, 0.0, 0.2, 0.2)
 
-        # 기본적으로 표시
         self.show()
 
     def show(self):

@@ -5,7 +5,7 @@ import time
 from functools import partial
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QProcess, QProcessEnvironment, Signal, QThread, QTimer   # QMutex
+from PySide6.QtCore import Qt, QProcess, QProcessEnvironment, Signal, QThread, QTimer
 from PySide6.QtWidgets import QWidget
 from PySide6.QtGui import QTextCursor, QFontDatabase
 
@@ -33,16 +33,8 @@ FONT_SIZE = 9
 WEIGHT_BOLD = 600
 WEIGHT_NORMAL = 300
 
-# 사용 방법
-# - 공통적으로 CPU는 idle 상태인 아무거나로 실행하거나 또는 사용할 CPU를 지정하여 실행 가능
-# - 명령어는 리스트로 한꺼번에 넣으면 됨
-# - 싱글 코어로 실행 시
 
-# >> self.cmd.run(['python run_hardwork.py', 'python run_hardwork.py'])
 
-# 병렬로 실행 시(여러 코어로 실행)
-# >> self.cmd.set_total_proc(2)
-# >> self.cmd.run(['python run_hardwork.py', 'python run_hardwork.py'])
 
 class FindUsableCPU(QThread):
     waiting = Signal()
@@ -59,7 +51,7 @@ class FindUsableCPU(QThread):
     def run(self):
         self.waiting.emit()
         _get_cpu = -1
-        _max_tries = 25  # 약 10초(25 × 0.4s) 후 타임아웃
+        _max_tries = 25
         _tries = 0
         while _get_cpu == -1:
             _get_cpu = get_idle_cpu(self.available_cpus, self.ratio)
@@ -67,7 +59,6 @@ class FindUsableCPU(QThread):
                 break
             _tries += 1
             if _tries >= _max_tries:
-                # 유휴 CPU를 못 찾으면 available_cpus 중 하나를 강제 선택
                 import random
                 _pool = list(self.available_cpus) if self.available_cpus else list(range(get_cpu_num()))
                 _get_cpu = random.choice(_pool) if _pool else 0
@@ -108,18 +99,17 @@ class ExecWidget(QWidget):
 
         self._show_command = True
 
-        # self._mutex = QMutex()
 
         self._procs = []
         self._procs_cmd = []
-        self._procs_state = []       # default is QProcess.ProcessState.NotRunning
+        self._procs_state = []
         self._thread_find_cpus = []
-        self._pending_cpu_assign = {}  # {proc_idx: cpu_id} - for async CPU assignment
+        self._pending_cpu_assign = {}
 
         self._stop_all_proc = False
         self._pause_all_proc = False
 
-        self._total_proc_num = 1  # 1 runs in single, 1> runs in parallel
+        self._total_proc_num = 1
         self._using_proc_num = 0
 
         self._available_cpus = [i for i in range(get_cpu_num())]
@@ -154,13 +144,11 @@ class ExecWidget(QWidget):
         self._is_tracking = True
         self._scrollbar_last_position = -1
 
-        # 출력 버퍼링 (GUI 락 방지)
-        self._output_buffer = {}  # {proc_idx: [text_chunks]}
+        self._output_buffer = {}
         self._flush_timer = None
-        self._flush_interval = 100  # ms (더 긴 간격으로 GUI 부하 감소)
+        self._flush_interval = 100
 
-        # 파일 로깅
-        self._log_file_handles = []  # 프로세스별 파일 핸들
+        self._log_file_handles = []
 
         self._initialize()
 
@@ -206,7 +194,6 @@ class ExecWidget(QWidget):
         self._ui.progressBar.setValue(0)
         self._ui.comboBox_output_proc_index.currentIndexChanged.connect(self._changed_combo_output_cpu)
 
-        # 출력 버퍼 플러시 타이머 설정
         self._flush_timer = QTimer(self)
         self._flush_timer.timeout.connect(self._flush_output_buffer)
         self._flush_timer.start(self._flush_interval)
@@ -229,7 +216,6 @@ class ExecWidget(QWidget):
         elif cur_view == 1:
             cur_proc = self.get_current_view() - 1
             self._output_view.clear()
-            # 로그 파일도 비우기
             if cur_proc < len(self._log_file_handles):
                 fh = self._log_file_handles[cur_proc]
                 if fh:
@@ -252,7 +238,6 @@ class ExecWidget(QWidget):
         else:
             self._ui.stackedWidget.setCurrentIndex(1)
             self._ui.checkBox_tracking.show()
-            # 실행 중이 아닐 때만 파일에서 전체 내용 로드
             if not self.is_running():
                 text = self.get_messages(index - 1)
                 self.set_text(text, index)
@@ -296,8 +281,6 @@ class ExecWidget(QWidget):
             return
         self._dock.hide_dock()
 
-    # def set_dock_widget_position(self, parent, position):
-    #     self.addDockWidget(Qt.LeftDockWidgetArea, dock)
 
     def connect_to_menu_action(self, action):
         if self._dock is not None:
@@ -359,7 +342,6 @@ class ExecWidget(QWidget):
         self._elapsed_time = []
 
     def end(self):
-        # Stop flush timer to prevent crashes during cleanup
         if self._flush_timer:
             self._flush_timer.stop()
         self._close_log_files()
@@ -428,7 +410,6 @@ class ExecWidget(QWidget):
         self._idle_ratio = ratio
 
     def set_tracking(self, tracking=True):
-        # rangeChanged 연결 제거 - 버퍼 플러시 시에만 스크롤 (성능 최적화)
         self._is_tracking = tracking
 
     def set_scroll_bottom(self, index=0):
@@ -548,7 +529,7 @@ class ExecWidget(QWidget):
             view = self._log_view
         else:
             view = self._output_view
-        view.setText(text)
+        view.setPlainText(text)
 
     def set_show_command(self, show=True):
         self._show_command = show
@@ -601,7 +582,6 @@ class ExecWidget(QWidget):
             return False
 
         if self._progressbar is not None:
-            # self._progressbar.reset()
             self._progressbar.setFormat('%p %')
             self._progressbar.setRange(0, 100)
             self._progressbar.setValue(0)
@@ -610,7 +590,6 @@ class ExecWidget(QWidget):
         self._ui.comboBox_output_proc_index.addItem('Log')
         self._ui.comboBox_output_proc_index.addItems([str(f'Proc. {i}') for i in range(self._using_proc_num)])
 
-        # 프로세스별 stdout 로그 파일 열기
         for i in range(self._using_proc_num):
             try:
                 fh = open(self._get_log_path(i), 'w', encoding='utf-8', buffering=1)
@@ -618,7 +597,6 @@ class ExecWidget(QWidget):
             except Exception:
                 self._log_file_handles.append(None)
 
-        # Run Process
         for proc_idx in range(self._using_proc_num):
             self._funcs_get_finished.append(create_func_args(self._get_finished, proc_idx))
             self._funcs_changed_state.append(create_func_args(self._changed_state, proc_idx))
@@ -630,9 +608,7 @@ class ExecWidget(QWidget):
             self._elapsed_time.append(0)
 
         for proc_idx in range(self._using_proc_num):
-            # State: Not Running
             new_proc = QProcess()
-            # new_proc.errorOccurred.connect()   # Don't use, there is some bug in QProcess
             new_proc.finished.connect(self._funcs_get_finished[proc_idx])
             new_proc.stateChanged.connect(self._funcs_changed_state[proc_idx])
             new_proc.readyReadStandardOutput.connect(self._funcs_get_message_output[proc_idx])
@@ -658,7 +634,6 @@ class ExecWidget(QWidget):
 
         if self._cur_count == 2:
             self._progressbar.setValue(1)
-            # self.sig_proc_status.emit(proc_idx, cpu_id, pid, 'Running=1')
 
         if self._thread_find_cpus[proc_idx] is not None:
             self._thread_find_cpus[proc_idx].stop_finding()
@@ -706,7 +681,6 @@ class ExecWidget(QWidget):
 
         self._start_time[proc_idx] = time.time()
 
-        # Store CPU for async assignment when process starts running
         self._pending_cpu_assign[proc_idx] = get_cpu
 
         split_cmd = self._procs[proc_idx].splitCommand(_cmd)
@@ -714,16 +688,14 @@ class ExecWidget(QWidget):
             self._procs[proc_idx].start(split_cmd[0])
         elif len(split_cmd) > 1:
             self._procs[proc_idx].start(split_cmd[0], split_cmd[1:])
-        else:   # Cannot reach this point
+        else:
             self._stopped_proc(proc_idx, f'There is no command: {_cmd}')
             return False
 
-        # State: Starting (CPU assignment happens in _changed_state when Running)
         self.sig_proc_status.emit(proc_idx, get_cpu, -1, 'Starting')
         return True
 
     def _stopped_proc(self, proc_idx, msg='Stopped'):
-        # Disconnect ALL signals and schedule safe deletion
         proc = self._procs[proc_idx]
         if proc is not None:
             try:
@@ -773,7 +745,6 @@ class ExecWidget(QWidget):
         is_next = False
         is_stopped = False
 
-        # Disconnect ALL signals and schedule safe deletion
         proc = self._procs[proc_idx]
         if proc is not None:
             try:
@@ -786,10 +757,8 @@ class ExecWidget(QWidget):
             proc.deleteLater()
         self._procs[proc_idx] = None
 
-        # stateChanged(NotRunning)은 disconnect 이후 도착하므로 직접 갱신
         self._procs_state[proc_idx] = QProcess.ProcessState.NotRunning
 
-        # Check if process was killed (CrashExit) or user-stopped
         exit_status = args[0] if args else QProcess.ExitStatus.NormalExit
         was_killed = (exit_status == QProcess.ExitStatus.CrashExit) or self._stop_all_proc
 
@@ -799,11 +768,11 @@ class ExecWidget(QWidget):
                 self._elapsed_time[proc_idx] = time.time() - self._start_time[proc_idx]
                 self._run_next(proc_idx)
                 is_next = True
-        else:   # Error
+        else:
             if exit_code == 2:
                 self.add_log_error(self._procs_cmd[proc_idx][0], f'No such file or directory (Check the log for details)')
                 is_stopped = True
-            else:   # Error 1, ...
+            else:
                 self.add_log_stopped(self._procs_cmd[proc_idx][0])
                 is_stopped = True
 
@@ -820,7 +789,6 @@ class ExecWidget(QWidget):
             else:
                 cur_value = (int)(((self._cur_count - 2) / self._total_cmd_num) * 100)
                 self._progressbar.setValue(cur_value)
-                # self.sig_proc_status.emit(proc_idx, -1, -1, f'Running-{cur_value}%')
 
         for state in self._procs_state:
             if state != QProcess.ProcessState.NotRunning:
@@ -835,14 +803,11 @@ class ExecWidget(QWidget):
 
             if self._progressbar is not None:
                 self._progressbar.setValue(100)
-                # self.sig_proc_status.emit(proc_idx, -1, -1, f'Finished-100%')
 
-        # Restore UI after all commands finished or stopped with error
         if not is_next:
             if self._funcs_restore_ui:
                 self._run_restore_ui()
 
-        # Clean up thread reference
         if not is_next and self._thread_find_cpus[proc_idx] is not None:
             t = self._thread_find_cpus[proc_idx]
             self._thread_find_cpus[proc_idx] = None
@@ -852,7 +817,6 @@ class ExecWidget(QWidget):
         new_proc = QProcess()
         self._procs[proc_idx] = new_proc
 
-        # State: Not Running
         new_proc.stateChanged.connect(self._funcs_changed_state[proc_idx])
         new_proc.readyReadStandardOutput.connect(self._funcs_get_message_output[proc_idx])
         new_proc.readyReadStandardError.connect(self._funcs_get_message_error[proc_idx])
@@ -871,7 +835,6 @@ class ExecWidget(QWidget):
     def _changed_state(self, proc_idx, state):
         self._procs_state[proc_idx] = state
 
-        # Async CPU assignment when process starts running
         if state == QProcess.ProcessState.Running:
             cpu_id = self._pending_cpu_assign.pop(proc_idx, None)
             if cpu_id is not None:
@@ -910,10 +873,10 @@ class ExecWidget(QWidget):
                 if remain_cmds < self._using_proc_num:
                     remain_cmds = self._using_proc_num
                 total_time = (_max_time * remain_cmds)
-                remain_time = total_time / (self._using_proc_num * 0.85)  # parallel value (0.8~0.9)
+                remain_time = total_time / (self._using_proc_num * 0.85)
 
                 hour, min, sec = seconds_to_time(remain_time)
-                _str_ete = ''  # '≦'
+                _str_ete = ''
                 if hour > 0:
                     _str_ete += f' {hour}h'
                 if min > 0:
@@ -977,9 +940,10 @@ class ExecWidget(QWidget):
                         continue
 
             elif self._procs_state[i] == QProcess_ProcessState_WAITING:
-                self._thread_find_cpus[i].stop_finding()
-                self._thread_find_cpus[i].wait(500)
-                self._thread_find_cpus[i] = None
+                if self._thread_find_cpus[i] is not None:
+                    self._thread_find_cpus[i].stop_finding()
+                    self._thread_find_cpus[i].wait(500)
+                    self._thread_find_cpus[i] = None
 
             else:
                 ...

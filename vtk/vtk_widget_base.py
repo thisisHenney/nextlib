@@ -15,12 +15,11 @@ from PySide6.QtWidgets import QWidget, QMainWindow, QVBoxLayout, QToolBar, QComb
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtCore import Signal, Qt, QEvent
 
-import vtkmodules.vtkRenderingOpenGL2  # noqa: F401 (OpenGL 초기화 필요)
+import vtkmodules.vtkRenderingOpenGL2
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 from vtkmodules.vtkRenderingCore import vtkRenderer
 import vtk
 
-# VTK 경고 메시지 비활성화 (non-manifold triangulation 등)
 vtk.vtkObject.GlobalWarningDisplayOff()
 
 from nextlib.vtk.camera import Camera
@@ -31,7 +30,6 @@ from nextlib.vtk.tool import AxesTool, RulerTool, PointProbeTool
 from nextlib.vtk.scene_tree_widget import SceneTreeWidget
 
 
-# 리소스 경로
 RES_DIR = Path(__file__).resolve().parent
 ICON_DIR = RES_DIR / "res" / "icon"
 
@@ -39,7 +37,6 @@ ICON_DIR = RES_DIR / "res" / "icon"
 class VtkWidgetBase(QMainWindow):
     """VTK 위젯 베이스 클래스 (QMainWindow 기반 - QToolBar 플로팅/도킹 지원)"""
 
-    # 시그널
     selection_changed = Signal(dict)
 
     def __init__(self, parent: QWidget = None, registry=None):
@@ -53,7 +50,6 @@ class VtkWidgetBase(QMainWindow):
         self.registry = registry
         self.camera_sync_lock = False
 
-        # 컴포넌트 초기화
         self.renderer: Optional[vtkRenderer] = None
         self.interactor = None
         self.vtk_widget: Optional[QVTKRenderWindowInteractor] = None
@@ -62,18 +58,14 @@ class VtkWidgetBase(QMainWindow):
         self.axes: Optional[AxesTool] = None
         self.ruler: Optional[RulerTool] = None
 
-        # 선택적 도구들
         self._optional_tools: Dict[str, object] = {}
         self._optional_tool_actions: Dict[str, QAction] = {}
 
-        # 바닥 평면 (ground plane)
         self._ground_plane_actor = None
 
-        # 씬 트리 (기본 비활성화)
         self._scene_tree: Optional[SceneTreeWidget] = None
         self._scene_tree_enabled = False
 
-        # UI 설정
         self._setup_ui()
         self._setup_vtk()
         self._setup_tools()
@@ -82,45 +74,35 @@ class VtkWidgetBase(QMainWindow):
 
         self.interactor.Initialize()
 
-        # 마우스 이벤트 stuck 방지: vtk_widget Leave/FocusOut 시 버튼 강제 해제
         self.vtk_widget.installEventFilter(self)
 
-        # 기본 씬 초기화 (XZ 평면 + 45도 뷰)
         self.init_default_scene()
 
-    # ===== 초기화 =====
 
     def _setup_ui(self):
         """UI 레이아웃 설정 (QMainWindow 기반)"""
-        # 툴바 (QMainWindow 툴바 영역에 추가 - 플로팅/도킹 지원)
         self.toolbar = QToolBar("VTK Toolbar", self)
         self.toolbar.setFloatable(False)
         self.toolbar.setMovable(False)
         self.addToolBar(self.toolbar)
 
-        # 메인 스플리터 (씬 트리 + VTK 프레임)
         self._main_splitter = QSplitter(Qt.Orientation.Horizontal, self)
 
-        # 씬 트리 위젯 (초기 숨김)
         self._scene_tree = SceneTreeWidget(self._main_splitter)
         self._scene_tree.hide()
 
-        # VTK 위젯을 감싸는 프레임 (Styled Panel)
         self.vtk_frame = QFrame(self._main_splitter)
         self.vtk_frame.setFrameShape(QFrame.Shape.StyledPanel)
         self.vtk_frame.setFrameShadow(QFrame.Shadow.Sunken)
         self.vtk_frame.setLineWidth(1)
 
-        # 프레임 내부 레이아웃
         frame_layout = QVBoxLayout(self.vtk_frame)
         frame_layout.setContentsMargins(1, 1, 1, 1)
         frame_layout.setSpacing(0)
 
-        # VTK 위젯
         self.vtk_widget = QVTKRenderWindowInteractor(self.vtk_frame)
         frame_layout.addWidget(self.vtk_widget, stretch=1)
 
-        # 프로그레스바 (하단에 배치, 기본 숨김)
         self._progress_container = QFrame(self.vtk_frame)
         self._progress_container.setFixedHeight(24)
         progress_layout = QHBoxLayout(self._progress_container)
@@ -158,10 +140,9 @@ class VtkWidgetBase(QMainWindow):
         frame_layout.addWidget(self._progress_container)
         self._progress_container.hide()
 
-        # 스플리터 설정 (씬 트리: 200px, VTK: 나머지)
-        self._main_splitter.setSizes([0, 1])  # 씬 트리 숨김 상태
-        self._main_splitter.setStretchFactor(0, 0)  # 씬 트리: 고정
-        self._main_splitter.setStretchFactor(1, 1)  # VTK: 확장
+        self._main_splitter.setSizes([0, 1])
+        self._main_splitter.setStretchFactor(0, 0)
+        self._main_splitter.setStretchFactor(1, 1)
 
         self.setCentralWidget(self._main_splitter)
 
@@ -173,37 +154,28 @@ class VtkWidgetBase(QMainWindow):
 
     def _setup_tools(self):
         """도구 초기화"""
-        # 객체 관리자 (카메라보다 먼저 생성 - 더블클릭 선택 지원)
         self.obj_manager = ObjectManager(self.renderer)
         self.obj_manager.selection_changed.connect(self._on_selection_changed)
         self.obj_manager.object_added.connect(self._on_object_added)
 
-        # 씬 트리에 ObjectManager 연결
         if self._scene_tree:
             self._scene_tree.set_object_manager(self.obj_manager)
 
-        # 카메라 (obj_manager 전달하여 더블클릭 선택 지원)
         self.camera = Camera(self)
         self.camera.init(self.obj_manager)
 
-        # Ctrl/Shift 클릭 및 Delete 키 콜백 설정
         self.obj_manager.set_picking_callback(self.interactor)
 
-        # 도구
         self.axes = AxesTool(self)
         self.ruler = RulerTool(self)
 
-        # 상태 조회
         self._state = SceneState(self)
 
     def _build_toolbar(self):
         """툴바 구성 - 서브클래스에서 오버라이드 가능"""
-        # ===== 카메라 뷰 =====
-        # Home
         home = self._add_action("\u2302", "", self.camera.home)
         home.setToolTip("Home")
 
-        # 6방향 뷰
         for name in ["Front", "Back", "Left", "Right", "Top", "Bottom"]:
             self._add_action(
                 name, f"{name.lower()}.png",
@@ -212,12 +184,10 @@ class VtkWidgetBase(QMainWindow):
 
         self.toolbar.addSeparator()
 
-        # ===== 줌 & 피팅 =====
         self._add_action("Zoom In", "zoom_in.png", lambda: self.camera.zoom_in())
         self._add_action("Zoom Out", "zoom_out.png", lambda: self.camera.zoom_out())
         self._add_action("Fit", "fit.png", self.fit_to_scene)
 
-        # 투영 방식 토글
         self._projection_action = self._add_toggle_action(
             "Projection", "perspective.png", "parallel.png",
             self._on_projection_toggled, checked=False
@@ -225,20 +195,16 @@ class VtkWidgetBase(QMainWindow):
 
         self.toolbar.addSeparator()
 
-        # ===== 선택 도구 =====
         self._add_action("Select All", "select_all.png", self._on_select_all)
         self._add_action("Deselect", "deselect.png", self._on_clear_selection)
 
         self.toolbar.addSeparator()
 
-        # ===== 뷰 보조 도구 =====
-        # 축 토글
         self._axes_action = self._add_toggle_action(
             "Axes", "axes_on.png", "axes_off.png",
             self._on_axes_toggled, checked=True
         )
 
-        # 눈금자 토글
         self._ruler_action = self._add_toggle_action(
             "Ruler", "ruler_on.png", "ruler_off.png",
             self._on_ruler_toggled, checked=False
@@ -246,7 +212,6 @@ class VtkWidgetBase(QMainWindow):
 
         self.toolbar.addSeparator()
 
-        # ===== 뷰 스타일 =====
         self._view_combo = QComboBox()
         self._view_combo.addItems([
             "wireframe",
@@ -258,73 +223,67 @@ class VtkWidgetBase(QMainWindow):
         self._view_combo.currentTextChanged.connect(self._on_view_style_changed)
         self.toolbar.addWidget(self._view_combo)
 
-        # ===== 바닥 평면 =====
         self._ground_plane_combo = QComboBox()
         self._ground_plane_combo.addItems(["Off", "XY", "YZ", "XZ"])
-        self._ground_plane_combo.setCurrentText("XZ")  # 기본값: XZ 평면
+        self._ground_plane_combo.setCurrentText("XZ")
         self._ground_plane_combo.setToolTip("Ground Plane")
         self._ground_plane_combo.currentTextChanged.connect(self._on_ground_plane_changed)
         self.toolbar.addWidget(self._ground_plane_combo)
 
         self.toolbar.addSeparator()
 
-        # ===== 가시성 토글 버튼 =====
-        self._geom_visible_action = QAction("\U0001F4D0", self)  # 📐 (Geometry)
+        self._geom_visible_action = QAction("\U0001F4D0", self)
         self._geom_visible_action.setToolTip("Show Geometry")
         self._geom_visible_action.setCheckable(True)
         self._geom_visible_action.setChecked(True)
         self._geom_visible_action.triggered.connect(self._on_geometry_visibility_toggled)
         self.toolbar.addAction(self._geom_visible_action)
 
-        self._mesh_visible_action = QAction("\U0001F5A7", self)  # 🖧 (Mesh)
+        self._mesh_visible_action = QAction("\U0001F5A7", self)
         self._mesh_visible_action.setToolTip("Show Mesh")
         self._mesh_visible_action.setCheckable(True)
         self._mesh_visible_action.setChecked(False)
         self._mesh_visible_action.triggered.connect(self._on_mesh_visibility_toggled)
         self.toolbar.addAction(self._mesh_visible_action)
 
-        self._both_visible_action = QAction("\u229E", self)  # ⊞ (Both)
+        self._both_visible_action = QAction("\u229E", self)
         self._both_visible_action.setToolTip("Show Both (Geometry + Mesh)")
         self._both_visible_action.setCheckable(True)
         self._both_visible_action.setChecked(False)
         self._both_visible_action.triggered.connect(self._on_both_visibility_toggled)
         self.toolbar.addAction(self._both_visible_action)
 
-        # 가시성 상태 추적
-        self._visibility_mode = "geometry"  # "geometry", "mesh", "both"
+        self._visibility_mode = "geometry"
 
         self.toolbar.addSeparator()
 
-        # ===== 씬 트리 토글 (기본 숨김) =====
-        self._scene_tree_action = QAction("\u2630", self)  # ☰ (햄버거 메뉴 아이콘)
+        self._scene_tree_action = QAction("\u2630", self)
         self._scene_tree_action.setToolTip("Scene Tree")
         self._scene_tree_action.setCheckable(True)
         self._scene_tree_action.setChecked(False)
         self._scene_tree_action.triggered.connect(self._on_scene_tree_toggled)
         self.toolbar.addAction(self._scene_tree_action)
-        self._scene_tree_action.setVisible(False)  # 기본 숨김
+        self._scene_tree_action.setVisible(False)
 
-        # 클립 관련 변수 초기화 (UI 컨트롤은 외부 패널에서 제공)
         self._clip_plane = None
-        self._clip_actors = {}  # {obj_id: clipped_actor}
-        self._original_actors_visibility = {}  # {obj_id: visibility}
-        self._clip_bounds = None  # 전체 바운딩 박스
-        self._clip_normal = None  # 현재 클립 방향
-        self._clip_mode = "off"  # 현재 클립 모드
-        self._clip_position = 50  # 현재 클립 위치 (0-100)
-        self._clip_invert = True  # 클립 방향 반전 (기본: 반전)
-        self._clip_custom_normal = (0.0, 0.0, 1.0)  # 커스텀 법선 벡터
-        self._clip_preview = False  # 미리보기 모드
-        self._clip_preview_actor = None  # 미리보기 평면 액터
-        self._current_view_style = "transparent"  # 현재 뷰 스타일
+        self._clip_actors = {}
+        self._original_actors_visibility = {}
+        self._clip_bounds = None
+        self._clip_normal = None
+        self._clip_mode = "off"
+        self._clip_position = 50
+        self._clip_invert = True
+        self._clip_custom_normal = (0.0, 0.0, 1.0)
+        self._clip_preview = False
+        self._clip_preview_actor = None
+        self._current_view_style = "transparent"
 
     def _set_background(self):
         """배경색 설정 - Fusion 360 스타일 화이트 그라데이션"""
-        self.renderer.SetBackground(0.75, 0.78, 0.82)   # 하단 (미디엄 그레이)
-        self.renderer.SetBackground2(0.98, 0.98, 1.0)   # 상단 (거의 흰색)
+        self.renderer.SetBackground(0.75, 0.78, 0.82)
+        self.renderer.SetBackground2(0.98, 0.98, 1.0)
         self.renderer.GradientBackgroundOn()
 
-    # ===== 툴바 헬퍼 =====
 
     def _make_icon(self, name: str) -> QIcon:
         """아이콘 생성"""
@@ -353,7 +312,6 @@ class VtkWidgetBase(QMainWindow):
         self.toolbar.addAction(action)
         return action
 
-    # ===== 툴바 슬롯 =====
 
     def _on_axes_toggled(self, checked: bool):
         """축 토글"""
@@ -385,7 +343,6 @@ class VtkWidgetBase(QMainWindow):
         if checked:
             self.set_visibility_mode("geometry", apply_visibility=True)
         else:
-            # 체크 해제 시 다시 체크 (최소 하나는 선택)
             self._geom_visible_action.setChecked(True)
 
     def _on_mesh_visibility_toggled(self, checked: bool):
@@ -393,7 +350,6 @@ class VtkWidgetBase(QMainWindow):
         if checked:
             self.set_visibility_mode("mesh", apply_visibility=True)
         else:
-            # 체크 해제 시 다시 체크 (최소 하나는 선택)
             self._mesh_visible_action.setChecked(True)
 
     def _on_both_visibility_toggled(self, checked: bool):
@@ -401,7 +357,6 @@ class VtkWidgetBase(QMainWindow):
         if checked:
             self.set_visibility_mode("both", apply_visibility=True)
         else:
-            # 체크 해제 시 다시 체크 (최소 하나는 선택)
             self._both_visible_action.setChecked(True)
 
     def _apply_visibility_mode(self, mode: str):
@@ -410,7 +365,6 @@ class VtkWidgetBase(QMainWindow):
         Args:
             mode: "geometry", "mesh", "both" 중 하나
         """
-        # 객체 가시성 업데이트
         for obj in self.obj_manager.get_all():
             group = getattr(obj, 'group', 'default')
 
@@ -419,14 +373,12 @@ class VtkWidgetBase(QMainWindow):
             elif mode == "mesh":
                 obj.actor.SetVisibility(group == "mesh")
             elif mode == "both":
-                # Both: geometry는 반투명, mesh는 불투명
                 obj.actor.SetVisibility(True)
                 if group == "geometry":
                     obj.actor.GetProperty().SetOpacity(0.3)
                 else:
                     obj.actor.GetProperty().SetOpacity(1.0)
 
-        # Both가 아닐 때 opacity 복원
         if mode != "both":
             for obj in self.obj_manager.get_all():
                 obj.actor.GetProperty().SetOpacity(1.0)
@@ -449,12 +401,10 @@ class VtkWidgetBase(QMainWindow):
 
         self._visibility_mode = mode
 
-        # 버튼 상태 동기화 (라디오 버튼처럼 동작)
         self._geom_visible_action.setChecked(mode == "geometry")
         self._mesh_visible_action.setChecked(mode == "mesh")
         self._both_visible_action.setChecked(mode == "both")
 
-        # apply_visibility=True일 때만 실제 가시성 변경
         if apply_visibility:
             self._apply_visibility_mode(mode)
 
@@ -463,10 +413,8 @@ class VtkWidgetBase(QMainWindow):
         self._current_view_style = style
         self.obj_manager.all().style(style)
 
-        # 클립 액터에도 스타일 적용
         self._apply_style_to_clip_actors(style)
 
-        # 선택이 활성화된 경우 페이드 상태 복원
         if self.obj_manager._selected_ids:
             self.obj_manager._update_selection_visual()
 
@@ -488,10 +436,8 @@ class VtkWidgetBase(QMainWindow):
 
     def _on_clip_mode_changed(self, mode: str):
         """클립 모드 변경 (내부 처리)"""
-        # 기존 클립 및 미리보기 제거
         self._clear_clip()
         self._remove_preview_plane()
-        # 원본 객체 가시성 복원 (클립 해제 또는 미리보기 모드로 전환 시)
         self._restore_original_visibility()
 
         if mode == "off":
@@ -501,7 +447,6 @@ class VtkWidgetBase(QMainWindow):
             self.render()
             return
 
-        # 클립 방향 결정
         if mode == "x":
             normal = (1, 0, 0)
         elif mode == "y":
@@ -516,10 +461,8 @@ class VtkWidgetBase(QMainWindow):
         self._clip_normal = normal
         self._clip_mode = mode
 
-        # 전체 바운딩 박스 계산
         self._calculate_clip_bounds()
 
-        # 미리보기 모드면 평면 표시, 아니면 실제 클립 적용
         if self._clip_preview:
             self._show_preview_plane()
         else:
@@ -538,7 +481,6 @@ class VtkWidgetBase(QMainWindow):
 
         for obj in all_objs:
             try:
-                # 보이지 않는 객체는 건너뛰기
                 if not obj.actor.GetVisibility():
                     continue
 
@@ -552,7 +494,6 @@ class VtkWidgetBase(QMainWindow):
             except:
                 continue
 
-        # 유효한 bounds 확인
         if min_x == float("inf"):
             self._clip_bounds = None
             return
@@ -566,18 +507,14 @@ class VtkWidgetBase(QMainWindow):
         if self._clip_bounds is None or self._clip_normal is None:
             return
 
-        # 미리보기 모드면 평면만 업데이트, 아니면 실제 클립
         if self._clip_preview:
-            # 기존 클립 제거 및 원본 복원 (실제 클립에서 미리보기로 전환된 경우)
             if self._clip_actors:
                 self._clear_clip()
                 self._restore_original_visibility()
             self._remove_preview_plane()
             self._show_preview_plane()
         else:
-            # 기존 클립 액터 제거
             self._clear_clip()
-            # 새 위치에서 클립 적용
             self._apply_clip()
         self.render()
 
@@ -594,18 +531,16 @@ class VtkWidgetBase(QMainWindow):
         if not all_objs:
             return
 
-        # 슬라이더 값에 따른 클립 위치 계산 (0-100 → bounds 범위)
         slider_val = self._clip_position / 100.0
         min_x, max_x, min_y, max_y, min_z, max_z = self._clip_bounds
 
-        # 클립 방향에 따라 위치 결정
-        if self._clip_normal == (1, 0, 0):  # X축
+        if self._clip_normal == (1, 0, 0):
             clip_pos = min_x + (max_x - min_x) * slider_val
             origin = (clip_pos, (min_y + max_y) / 2, (min_z + max_z) / 2)
-        elif self._clip_normal == (0, 1, 0):  # Y축
+        elif self._clip_normal == (0, 1, 0):
             clip_pos = min_y + (max_y - min_y) * slider_val
             origin = ((min_x + max_x) / 2, clip_pos, (min_z + max_z) / 2)
-        else:  # Z축
+        else:
             clip_pos = min_z + (max_z - min_z) * slider_val
             origin = ((min_x + max_x) / 2, (min_y + max_y) / 2, clip_pos)
 
@@ -613,15 +548,11 @@ class VtkWidgetBase(QMainWindow):
         self._clip_plane.SetOrigin(origin)
         self._clip_plane.SetNormal(self._clip_normal)
 
-        # 각 객체에 클립 적용 (현재 보이는 객체만)
         for obj in all_objs:
             try:
-                # 현재 가시성 확인 (탭 전환에 따라 변경된 상태)
                 current_visibility = obj.actor.GetVisibility()
 
-                # 현재 보이지 않는 객체는 건너뛰기 (기존 클립 액터 제거)
                 if not current_visibility:
-                    # 이미 클립 액터가 있으면 제거
                     if obj.id in self._clip_actors:
                         try:
                             self.renderer.RemoveActor(self._clip_actors[obj.id])
@@ -630,13 +561,10 @@ class VtkWidgetBase(QMainWindow):
                         del self._clip_actors[obj.id]
                     continue
 
-                # 원본 가시성 저장 (현재 보이는 상태)
                 self._original_actors_visibility[obj.id] = True
 
-                # 원본 숨기기
                 obj.actor.SetVisibility(False)
 
-                # 클립 액터 생성
                 mapper = obj.actor.GetMapper()
                 if mapper is None:
                     continue
@@ -645,7 +573,6 @@ class VtkWidgetBase(QMainWindow):
                 if input_data is None:
                     continue
 
-                # ClipPolyData로 반쪽 자르기
                 clipper = vtkClipPolyData()
                 clipper.SetInputData(input_data)
                 clipper.SetClipFunction(self._clip_plane)
@@ -655,12 +582,11 @@ class VtkWidgetBase(QMainWindow):
 
                 clip_mapper = vtkPolyDataMapper()
                 clip_mapper.SetInputConnection(clipper.GetOutputPort())
-                clip_mapper.ScalarVisibilityOff()  # LUT 레인보우 색상 방지
+                clip_mapper.ScalarVisibilityOff()
 
                 clip_actor = vtkActor()
                 clip_actor.SetMapper(clip_mapper)
 
-                # 원본 객체의 변환 정보 복사
                 clip_actor.SetPosition(obj.actor.GetPosition())
                 clip_actor.SetOrientation(obj.actor.GetOrientation())
                 clip_actor.SetScale(obj.actor.GetScale())
@@ -668,7 +594,6 @@ class VtkWidgetBase(QMainWindow):
                 if obj.actor.GetUserMatrix():
                     clip_actor.SetUserMatrix(obj.actor.GetUserMatrix())
 
-                # 현재 뷰 스타일 적용
                 from .core.object_manager import ObjectManager
                 _STYLE_COLOR = ObjectManager._STYLE_COLOR
                 orig_color = tuple(c / 255.0 for c in obj.color)
@@ -688,7 +613,7 @@ class VtkWidgetBase(QMainWindow):
                 elif style == "surface with edge":
                     prop.SetRepresentationToSurface()
                     prop.EdgeVisibilityOn()
-                    prop.SetEdgeColor(0.12, 0.15, 0.25)  # 다크 네이비 엣지
+                    prop.SetEdgeColor(0.12, 0.15, 0.25)
                     prop.SetColor(_STYLE_COLOR)
                     prop.SetOpacity(1.0)
                 elif style == "transparent":
@@ -721,19 +646,16 @@ class VtkWidgetBase(QMainWindow):
         if self._clip_bounds is None or self._clip_normal is None:
             return
 
-        # 기존 미리보기 제거
         self._remove_preview_plane()
 
         min_x, max_x, min_y, max_y, min_z, max_z = self._clip_bounds
         slider_val = self._clip_position / 100.0
 
-        # 평면 크기를 10% 확장
         margin = 0.1
         size_x = (max_x - min_x) * margin
         size_y = (max_y - min_y) * margin
         size_z = (max_z - min_z) * margin
 
-        # 확장된 bounds
         ext_min_x = min_x - size_x
         ext_max_x = max_x + size_x
         ext_min_y = min_y - size_y
@@ -741,20 +663,19 @@ class VtkWidgetBase(QMainWindow):
         ext_min_z = min_z - size_z
         ext_max_z = max_z + size_z
 
-        # 클립 방향에 따른 평면 설정
         plane_source = vtkPlaneSource()
 
-        if self._clip_normal == (1, 0, 0):  # X축
+        if self._clip_normal == (1, 0, 0):
             clip_pos = min_x + (max_x - min_x) * slider_val
             plane_source.SetOrigin(clip_pos, ext_min_y, ext_min_z)
             plane_source.SetPoint1(clip_pos, ext_max_y, ext_min_z)
             plane_source.SetPoint2(clip_pos, ext_min_y, ext_max_z)
-        elif self._clip_normal == (0, 1, 0):  # Y축
+        elif self._clip_normal == (0, 1, 0):
             clip_pos = min_y + (max_y - min_y) * slider_val
             plane_source.SetOrigin(ext_min_x, clip_pos, ext_min_z)
             plane_source.SetPoint1(ext_max_x, clip_pos, ext_min_z)
             plane_source.SetPoint2(ext_min_x, clip_pos, ext_max_z)
-        else:  # Z축
+        else:
             clip_pos = min_z + (max_z - min_z) * slider_val
             plane_source.SetOrigin(ext_min_x, ext_min_y, clip_pos)
             plane_source.SetPoint1(ext_max_x, ext_min_y, clip_pos)
@@ -768,13 +689,12 @@ class VtkWidgetBase(QMainWindow):
         self._clip_preview_actor = vtkActor()
         self._clip_preview_actor.SetMapper(mapper)
 
-        # 반투명 빨간색 평면 스타일
         prop = self._clip_preview_actor.GetProperty()
-        prop.SetColor(1.0, 0.3, 0.3)  # 빨간색
+        prop.SetColor(1.0, 0.3, 0.3)
         prop.SetOpacity(0.4)
         prop.SetRepresentationToSurface()
         prop.EdgeVisibilityOn()
-        prop.SetEdgeColor(1.0, 0.0, 0.0)  # 빨간 엣지
+        prop.SetEdgeColor(1.0, 0.0, 0.0)
         prop.SetLineWidth(2.0)
 
         self.renderer.AddActor(self._clip_preview_actor)
@@ -822,7 +742,7 @@ class VtkWidgetBase(QMainWindow):
             elif style == "surface with edge":
                 prop.SetRepresentationToSurface()
                 prop.EdgeVisibilityOn()
-                prop.SetEdgeColor(0.12, 0.15, 0.25)  # 다크 네이비 엣지
+                prop.SetEdgeColor(0.12, 0.15, 0.25)
                 prop.SetColor(_STYLE_COLOR)
                 prop.SetOpacity(1.0)
             elif style == "transparent":
@@ -851,7 +771,6 @@ class VtkWidgetBase(QMainWindow):
             self.obj_manager._apply_style(obj, self._current_view_style)
         self.update_ground_plane()
 
-    # ===== 공개 API =====
 
     @property
     def state(self) -> SceneState:
@@ -893,8 +812,33 @@ class VtkWidgetBase(QMainWindow):
         return self.obj_manager.selected()
 
     def fit_to_scene(self):
-        """씬에 맞춰 카메라 리셋"""
-        self.camera.fit()
+        """씬에 맞춰 카메라 리셋. 선택된 객체가 있으면 해당 영역으로만 fit."""
+        bounds = self._get_selected_bounds()
+        if bounds:
+            self.camera.fit_to_bounds(bounds)
+        else:
+            self.camera.fit()
+
+    def _get_selected_bounds(self):
+        """선택된 객체들의 합산 bounds 반환. 없으면 None."""
+        if not self.obj_manager or not self.obj_manager.selected_ids:
+            return None
+        min_x = min_y = min_z = float("inf")
+        max_x = max_y = max_z = float("-inf")
+        for sid in self.obj_manager.selected_ids:
+            obj = self.obj_manager.get(sid)
+            if not obj:
+                continue
+            try:
+                b = obj.actor.GetBounds()
+                min_x = min(min_x, b[0]); max_x = max(max_x, b[1])
+                min_y = min(min_y, b[2]); max_y = max(max_y, b[3])
+                min_z = min(min_z, b[4]); max_z = max(max_z, b[5])
+            except Exception:
+                continue
+        if min_x == float("inf"):
+            return None
+        return (min_x, max_x, min_y, max_y, min_z, max_z)
 
     def render(self):
         """즉시 렌더링"""
@@ -907,7 +851,6 @@ class VtkWidgetBase(QMainWindow):
             color1: RGB (0-1) 또는 (0-255)
             color2: 그라데이션용 두 번째 색상 (선택)
         """
-        # 0-255 범위를 0-1로 변환
         if max(color1) > 1:
             color1 = tuple(c / 255.0 for c in color1)
 
@@ -923,7 +866,6 @@ class VtkWidgetBase(QMainWindow):
 
         self.render()
 
-    # ===== 클립 공개 API =====
 
     def set_clip_mode(self, mode: str, preview: bool = False):
         """클립 모드 설정
@@ -964,10 +906,8 @@ class VtkWidgetBase(QMainWindow):
         if self._clip_mode == "off":
             return
 
-        # 미리보기 평면 제거
         self._remove_preview_plane()
 
-        # 실제 클립 적용
         self._clip_preview = False
         self._apply_clip()
         self.render()
@@ -977,13 +917,10 @@ class VtkWidgetBase(QMainWindow):
         if self._clip_mode == "off":
             return
 
-        # 적용된 클립 제거
         self._clear_clip()
 
-        # 원본 가시성 복원
         self._restore_original_visibility()
 
-        # 미리보기 모드로 전환하고 평면 다시 표시
         self._clip_preview = True
         self._show_preview_plane()
         self.render()
@@ -1039,15 +976,9 @@ class VtkWidgetBase(QMainWindow):
         for obj_id, clip_actor in list(self._clip_actors.items()):
             obj = self.obj_manager.get(obj_id)
             if obj:
-                # 원본 객체가 숨겨져 있으면 클립 액터도 숨김
-                # (클립 적용 시 원본은 이미 숨겨진 상태이므로 저장된 가시성 확인)
                 if obj_id in self._original_actors_visibility:
-                    # 원본이 원래 보였던 객체인지 확인
-                    # 현재 원본이 SetVisibility(False)로 숨겨진 상태이므로
-                    # 해당 객체의 그룹이나 현재 탭 컨텍스트로 판단
                     pass
                 else:
-                    # 원본 가시성 정보가 없으면 클립 액터 제거
                     try:
                         self.renderer.RemoveActor(clip_actor)
                     except:
@@ -1085,7 +1016,6 @@ class VtkWidgetBase(QMainWindow):
                 clip_actor.SetVisibility(True)
         self.render()
 
-    # ===== 바닥 평면 (Ground Plane) =====
 
     def show_ground_plane(self, plane: str = "xy", scale: float = 1.4, offset_ratio: float = 0.05):
         """객체 아래에 반투명 바닥 평면 표시
@@ -1102,10 +1032,8 @@ class VtkWidgetBase(QMainWindow):
         from vtkmodules.vtkFiltersSources import vtkPlaneSource
         from vtkmodules.vtkRenderingCore import vtkPolyDataMapper, vtkActor
 
-        # 기존 바닥 평면 제거
         self.hide_ground_plane()
 
-        # 전체 바운딩 박스 계산
         all_objs = self.obj_manager.get_all()
         has_objects = False
 
@@ -1127,29 +1055,24 @@ class VtkWidgetBase(QMainWindow):
             except:
                 continue
 
-        # 객체가 없으면 기본 크기 사용 (바닥 평면이 아래로 내려간 상태)
         if not has_objects or min_x == float("inf"):
             min_x, max_x = -1.0, 1.0
-            min_y, max_y = -0.6, 1.4  # 바닥 평면이 y=-0.6에 위치
+            min_y, max_y = -0.6, 1.4
             min_z, max_z = -1.0, 1.0
-            scale = 1.0  # 기본 크기일 때는 스케일 1
-            offset_ratio = 0.0  # 오프셋 없음
+            scale = 1.0
+            offset_ratio = 0.0
 
-        # 바운딩 박스 크기
         size_x = max_x - min_x
         size_y = max_y - min_y
         size_z = max_z - min_z
 
-        # 중심점
         center_x = (min_x + max_x) / 2
         center_y = (min_y + max_y) / 2
         center_z = (min_z + max_z) / 2
 
-        # 평면 생성
         plane_source = vtkPlaneSource()
 
         if plane == "xy":
-            # XY 평면 (Z 방향 법선) - 뒤쪽 벽 (Y가 위쪽일 때)
             half_w = (size_x * scale) / 2
             half_h = (size_y * scale) / 2
             plane_pos = min_z - (size_z * offset_ratio)
@@ -1157,7 +1080,6 @@ class VtkWidgetBase(QMainWindow):
             plane_source.SetPoint1(center_x + half_w, center_y - half_h, plane_pos)
             plane_source.SetPoint2(center_x - half_w, center_y + half_h, plane_pos)
         elif plane == "yz":
-            # YZ 평면 (X 방향 법선) - 왼쪽 벽 (Y가 위쪽일 때)
             half_w = (size_y * scale) / 2
             half_h = (size_z * scale) / 2
             plane_pos = min_x - (size_x * offset_ratio)
@@ -1165,7 +1087,6 @@ class VtkWidgetBase(QMainWindow):
             plane_source.SetPoint1(plane_pos, center_y + half_w, center_z - half_h)
             plane_source.SetPoint2(plane_pos, center_y - half_w, center_z + half_h)
         elif plane == "xz":
-            # XZ 평면 (Y 방향 법선) - 바닥 (Y가 위쪽일 때)
             half_w = (size_x * scale) / 2
             half_h = (size_z * scale) / 2
             plane_pos = min_y - (size_y * offset_ratio)
@@ -1173,7 +1094,7 @@ class VtkWidgetBase(QMainWindow):
             plane_source.SetPoint1(center_x + half_w, plane_pos, center_z - half_h)
             plane_source.SetPoint2(center_x - half_w, plane_pos, center_z + half_h)
         else:
-            return  # 알 수 없는 평면
+            return
 
         plane_source.SetXResolution(10)
         plane_source.SetYResolution(10)
@@ -1185,13 +1106,12 @@ class VtkWidgetBase(QMainWindow):
         self._ground_plane_actor = vtkActor()
         self._ground_plane_actor.SetMapper(mapper)
 
-        # 반투명 스타일 설정 - Fusion 360 스타일
         prop = self._ground_plane_actor.GetProperty()
-        prop.SetColor(0.85, 0.85, 0.88)  # 라이트 그레이
-        prop.SetOpacity(0.5)  # 반투명
+        prop.SetColor(0.85, 0.85, 0.88)
+        prop.SetOpacity(0.5)
         prop.SetRepresentationToSurface()
         prop.EdgeVisibilityOn()
-        prop.SetEdgeColor(0.7, 0.7, 0.75)  # 미디엄 그레이 격자선
+        prop.SetEdgeColor(0.7, 0.7, 0.75)
         prop.SetLineWidth(1.0)
 
         self.renderer.AddActor(self._ground_plane_actor)
@@ -1232,21 +1152,18 @@ class VtkWidgetBase(QMainWindow):
 
         VTK 좌표계: X=오른쪽, Y=위쪽, Z=화면 앞쪽
         """
-        # 기본 XZ 평면 표시
         if hasattr(self, '_ground_plane_combo'):
             plane = self._ground_plane_combo.currentText().lower()
             if plane != "off":
                 self.show_ground_plane(plane=plane)
 
-        # 45도 위에서 내려다보는 뷰 설정 (Y축이 위)
         cam = self.renderer.GetActiveCamera()
-        cam.SetPosition(2, 3, 3)  # 대각선 위치 (오른쪽-위-앞)
-        cam.SetFocalPoint(0, 0, 0)  # 원점 바라보기
-        cam.SetViewUp(0, 1, 0)  # Y축이 위
+        cam.SetPosition(2, 3, 3)
+        cam.SetFocalPoint(0, 0, 0)
+        cam.SetViewUp(0, 1, 0)
         self.renderer.ResetCamera()
         self.render()
 
-    # ===== 프로그레스바 =====
 
     def show_progress(self, label: str = "Loading...", value: int = 0, maximum: int = 100):
         """프로그레스바 표시
@@ -1277,7 +1194,6 @@ class VtkWidgetBase(QMainWindow):
         self._progress_container.hide()
         self._progress_bar.setValue(0)
 
-    # ===== 선택적 도구 관리 =====
 
     def add_tool(self, tool_name: str, icon_on: str = None, icon_off: str = None) -> bool:
         """선택적 도구를 툴바에 추가
@@ -1295,7 +1211,7 @@ class VtkWidgetBase(QMainWindow):
             widget.add_tool("point_probe", "probe_on.png", "probe_off.png")
         """
         if tool_name in self._optional_tools:
-            return False  # 이미 추가됨
+            return False
 
         tool = None
 
@@ -1310,7 +1226,6 @@ class VtkWidgetBase(QMainWindow):
 
         self._optional_tools[tool_name] = tool
 
-        # 툴바에 토글 액션 추가
         action = self._add_toggle_action(
             tooltip, icon_on, icon_off,
             lambda checked, name=tool_name: self._on_optional_tool_toggled(name, checked),
@@ -1334,13 +1249,11 @@ class VtkWidgetBase(QMainWindow):
 
         tool = self._optional_tools.pop(tool_name)
 
-        # 도구 정리
         if hasattr(tool, 'cleanup'):
             tool.cleanup()
         elif hasattr(tool, 'hide'):
             tool.hide()
 
-        # 툴바에서 액션 제거
         if tool_name in self._optional_tool_actions:
             action = self._optional_tool_actions.pop(tool_name)
             self.toolbar.removeAction(action)
@@ -1363,7 +1276,6 @@ class VtkWidgetBase(QMainWindow):
         if hasattr(tool, 'show'):
             tool.show()
 
-        # 툴바 액션 상태 업데이트
         if tool_name in self._optional_tool_actions:
             self._optional_tool_actions[tool_name].setChecked(True)
 
@@ -1385,7 +1297,6 @@ class VtkWidgetBase(QMainWindow):
         if hasattr(tool, 'hide'):
             tool.hide()
 
-        # 툴바 액션 상태 업데이트
         if tool_name in self._optional_tool_actions:
             self._optional_tool_actions[tool_name].setChecked(False)
 
@@ -1407,7 +1318,6 @@ class VtkWidgetBase(QMainWindow):
         if hasattr(tool, 'toggle'):
             tool.toggle()
 
-            # 툴바 액션 상태 업데이트
             if tool_name in self._optional_tool_actions:
                 is_visible = getattr(tool, 'is_visible', False)
                 self._optional_tool_actions[tool_name].setChecked(is_visible)
@@ -1480,7 +1390,6 @@ class VtkWidgetBase(QMainWindow):
         else:
             self.hide_tool(tool_name)
 
-    # ===== 씬 트리 =====
 
     def enable_scene_tree(self):
         """씬 트리 패널 활성화
@@ -1496,14 +1405,12 @@ class VtkWidgetBase(QMainWindow):
 
         self._scene_tree_enabled = True
 
-        # 툴바 버튼 상태 동기화
         if hasattr(self, '_scene_tree_action'):
             self._scene_tree_action.setChecked(True)
 
         if self._scene_tree:
             self._scene_tree.show()
             self._scene_tree.refresh()
-            # 스플리터 크기 조정 (씬 트리: 200px)
             self._main_splitter.setSizes([200, self.width() - 200])
 
     def disable_scene_tree(self):
@@ -1517,13 +1424,11 @@ class VtkWidgetBase(QMainWindow):
 
         self._scene_tree_enabled = False
 
-        # 툴바 버튼 상태 동기화
         if hasattr(self, '_scene_tree_action'):
             self._scene_tree_action.setChecked(False)
 
         if self._scene_tree:
             self._scene_tree.hide()
-            # 스플리터 크기 조정 (씬 트리: 0px)
             self._main_splitter.setSizes([0, self.width()])
 
     def toggle_scene_tree(self):
@@ -1564,19 +1469,15 @@ class VtkWidgetBase(QMainWindow):
         if self._scene_tree:
             self._scene_tree.refresh()
 
-    # ===== 정리 =====
 
     def cleanup(self):
         """리소스 정리"""
         try:
-            # 클립 정리
             self._clear_clip()
             self._restore_original_visibility()
 
-            # 바닥 평면 정리
             self.hide_ground_plane()
 
-            # 선택적 도구 정리
             for tool_name in list(self._optional_tools.keys()):
                 self.remove_tool(tool_name)
 
@@ -1610,13 +1511,11 @@ class VtkWidgetBase(QMainWindow):
         """VTK 및 CADInteractorStyle의 마우스 버튼/드래그 상태를 강제 리셋
         Python 속성만 조작 — VTK C++ 메서드 호출 금지 (segfault 방지)"""
         try:
-            # CADInteractorStyle Python 플래그 리셋
             if self.interactor:
                 style = self.interactor.GetInteractorStyle()
                 if isinstance(style, CADInteractorStyle):
                     style.reset_state()
 
-            # QVTKRenderWindowInteractor._ActiveButton Python 속성 리셋
             if self.vtk_widget and hasattr(self.vtk_widget, '_ActiveButton'):
                 self.vtk_widget._ActiveButton = Qt.MouseButton.NoButton
         except Exception:

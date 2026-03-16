@@ -108,8 +108,6 @@ class QtGraphWidget(QWidget):
 
     def add_graph(self, id: int, name: str, data, group: int = 0, pen=None):
         self.graph_manager.add_graph(id, name, data, group, pen)
-        # self.add_graph(0, "Ux residual", (time, ux_res))
-        # self.add_graph(1, "Uy residual", (time, uy_res))
 
     def remove_graph(self, id: int):
         self.graph_manager.remove_graph(id)

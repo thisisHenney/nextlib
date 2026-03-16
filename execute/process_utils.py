@@ -4,14 +4,13 @@ import psutil
 import random
 
 
-def get_os_type() -> str:  # return: 'Linux', 'Darwin', 'Windows', 'Java', ''
+def get_os_type() -> str:
     return platform.system()
 
 def get_cpu_freq(percpu=False):
     return psutil.cpu_freq(percpu=percpu)
 
 def get_cpu_percent(interval: int=0.2, percpu: bool=True):
-    # percpu: True-개별 core, False-평균 core
     return psutil.cpu_percent(interval=interval, percpu=percpu)
 
 def get_idle_cpu(available_cpus=None, ratio=5.0):
@@ -28,7 +27,6 @@ def get_idle_cpu(available_cpus=None, ratio=5.0):
     return random.choice(usable_cpus)
 
 def get_cpu_num(logical=True):
-    # logical: True-logical core, False-physical core
     return psutil.cpu_count(logical=logical)
 
 def get_affinity_cpu_num():
@@ -42,7 +40,7 @@ def get_affinity_cpu():
 def get_swap_memory():
     return psutil.swap_memory()
 
-def get_disk_usage(drive_path): # drive_path = "C:", "D:"
+def get_disk_usage(drive_path):
     return psutil.disk_usage(drive_path)
 
 def get_disk_partitions():
@@ -76,7 +74,7 @@ def get_process_info(pid: int=-1) -> dict:
     except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
         return {}
 
-def get_pid_exits(pid:int): # pid가 있는지 확인하는 함수
+def get_pid_exits(pid:int):
     return psutil.pid_exists(pid)
 
 def suspend_process(pid: int) -> bool:
@@ -129,7 +127,7 @@ def kill_process_with_children(pid: int) -> None:
     except psutil.NoSuchProcess:
         pass
 
-def assign_cpu(pid: int = None, cpu_num: int = 0) -> bool:  # CPU를 고정되게 사용
+def assign_cpu(pid: int = None, cpu_num: int = 0) -> bool:
     if pid is None:
         pid = os.getpid()
 
@@ -149,11 +147,4 @@ def assign_cpu(pid: int = None, cpu_num: int = 0) -> bool:  # CPU를 고정되�
         return False
 
 
-# ------------------------------------------------------------------------------
-# 지원 안되는 함수들
-# ------------------------------------------------------------------------------
-# def get_sensors_temperatures():
-#     return psutil.sensors_temperatures(fahrenheit=False)
 
-# def get_sensors_fans():
-#     return psutil.sensors_fans()

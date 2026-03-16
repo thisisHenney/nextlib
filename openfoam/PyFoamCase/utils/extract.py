@@ -57,15 +57,12 @@ class ExtractUtil:
                         index += 1
                         continue
 
-                    # dictionary
                     if tok == '{':
                         child, index = self.extract(token_data, index + 1)
                         result[key] = child
                         break
 
-                    # parentheses
                     if tok == '(':
-                        # vector
                         j = index + 1
                         vec = []
                         is_vector = True
@@ -96,7 +93,6 @@ class ExtractUtil:
                                 index += 1
                             break
 
-                        # list of vector
                         j = index + 1
                         vectors = []
                         is_vector_list = True
@@ -143,7 +139,6 @@ class ExtractUtil:
                                 index += 1
                             break
 
-                        # general list (string / dict / inline-key-list)
                         values = []
                         current = []
                         index += 1
@@ -155,18 +150,15 @@ class ExtractUtil:
                                 index += 1
                                 continue
 
-                            # list item: dict
                             if tok == '{':
                                 child, index = self.extract(token_data, index + 1)
                                 values.append(child)
                                 continue
 
-                            # list entry: key + { dict }
                             if tok[0].isalnum() or tok in ['"', '#', '$']:
                                 item_key = tok
                                 j = index + 1
 
-                                # skip whitespace / newline
                                 while j < n and (token_data[j] == '\n' or token_data[j].isspace()):
                                     j += 1
 
@@ -176,7 +168,6 @@ class ExtractUtil:
                                     index = j2
                                     continue
 
-                            # generic inline with optional count: <name> [count] ( ... )
                             if tok[0].isalnum() or tok[0] in ['"', '#', '$']:
                                 name = tok
                                 j = index + 1
@@ -184,7 +175,6 @@ class ExtractUtil:
                                 while j < n and (token_data[j] == '\n' or token_data[j].isspace()):
                                     j += 1
 
-                                # optional count
                                 if j < n and self._to_number(token_data[j]) is not None:
                                     j += 1
                                     while j < n and (token_data[j] == '\n' or token_data[j].isspace()):
@@ -209,7 +199,6 @@ class ExtractUtil:
                                     index = j
                                     continue
 
-                            # inline key + ( ... )
                             if (tok[0].isalnum() or tok[0] in ['"', '#', '$']):
                                 item_key = tok
                                 j = index + 1
@@ -255,7 +244,6 @@ class ExtractUtil:
                                         index = j
                                         continue
 
-                            # mixed inline sequence (hex (..) (..) word (..))
                             if tok[0].isalnum() or tok in ['"', '#', '$']:
                                 seq = []
                                 j = index
@@ -270,7 +258,6 @@ class ExtractUtil:
                                         j += 1
                                         continue
 
-                                    # vector
                                     if t == '(':
                                         k = j + 1
                                         vec = []
@@ -302,7 +289,6 @@ class ExtractUtil:
 
                                         break
 
-                                    # plain word
                                     if t[0].isalnum() or t in ['"', '#', '$']:
                                         seq.append(t)
                                         j += 1
@@ -315,7 +301,6 @@ class ExtractUtil:
                                     index = j
                                     continue
 
-                            # newline split
                             if tok == '\n':
                                 if current:
                                     values.append(' '.join(current))
@@ -341,7 +326,6 @@ class ExtractUtil:
                             index += 1
                         break
 
-                    # leaf
                     value_tokens = []
                     while index < n:
                         tok = token_data[index]
@@ -370,7 +354,7 @@ class ExtractUtil:
         blocks = []
         cur = []
         depth = 0
-        index += 1  # skip '(' after blocks
+        index += 1
         n = len(tokens)
 
         while index < n:
@@ -397,7 +381,6 @@ class ExtractUtil:
                 index += 1
                 continue
 
-            # 새로운 block 시작: hex
             if tok == 'hex' and cur and depth == 0:
                 blocks.append(self._normalize_block(cur))
                 cur = []
@@ -453,7 +436,7 @@ class ExtractUtil:
                 return i
             return i
 
-        index += 1  # skip '(' after regions
+        index += 1
 
         while index < n:
             index = skip(index)
@@ -481,7 +464,7 @@ class ExtractUtil:
             if index >= n or tokens[index] != '(':
                 return regions, index
 
-            index += 1  # skip '('
+            index += 1
             names = []
 
             while index < n:

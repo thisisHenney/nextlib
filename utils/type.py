@@ -8,7 +8,6 @@ def is_number(value):
 
 def is_integer(value):
     try:
-        # str -> float -> int 변환 시 오류 체크
         float_val = float(value)
         return float_val.is_integer()
     except (ValueError, TypeError):
@@ -18,7 +17,6 @@ def is_integer(value):
 def is_float(value):
     try:
         float_val = float(value)
-        # 정수는 제외하고, float만 True
         return not float_val.is_integer()
     except (ValueError, TypeError):
         return False

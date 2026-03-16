@@ -23,11 +23,9 @@ class PreprocessTab(QWidget):
     def _setup_ui(self):
         layout = QHBoxLayout(self)
 
-        # VTK 위젯 생성
         self.vtk_widget = VtkWidgetBase(self)
         layout.addWidget(self.vtk_widget, stretch=1)
 
-        # 사이드바 버튼들
         sidebar = QVBoxLayout()
         layout.addLayout(sidebar)
 
@@ -63,7 +61,6 @@ class PreprocessTab(QWidget):
         btn_group_geometry.clicked.connect(self._show_geometry_only)
         sidebar.addWidget(btn_group_geometry)
 
-        # Point Probe 도구
         self.btn_probe = QPushButton("Point Probe")
         self.btn_probe.setCheckable(True)
         self.btn_probe.clicked.connect(self._toggle_point_probe)
@@ -75,17 +72,13 @@ class PreprocessTab(QWidget):
 
         sidebar.addStretch()
 
-        # 형상 생성기 & 메쉬 로더
         self.geo = GeometrySource()
         self.loader = MeshLoader()
 
-        # 객체 추가
         self._add_demo_objects()
 
-        # 선택 변경 시그널 연결
         self.vtk_widget.selection_changed.connect(self._on_selection_changed)
 
-        # Point Probe 도구 추가
         self.vtk_widget.add_tool("point_probe")
 
         probe = self.vtk_widget.get_tool("point_probe")
@@ -216,11 +209,9 @@ class PostprocessTab(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # 후처리 위젯
         self.post_widget = PostprocessWidget(self)
         layout.addWidget(self.post_widget)
 
-        # 시그널 연결
         self.post_widget.case_loaded.connect(self._on_case_loaded)
         self.post_widget.field_changed.connect(self._on_field_changed)
 
@@ -250,15 +241,12 @@ class DemoWindow(QMainWindow):
         self.setWindowTitle("VTK Widget Demo")
         self.setGeometry(100, 100, 1200, 800)
 
-        # 탭 위젯
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
 
-        # 전처리 탭
         self.preprocess_tab = PreprocessTab()
         self.tabs.addTab(self.preprocess_tab, "Preprocess")
 
-        # 후처리 탭
         self.postprocess_tab = PostprocessTab()
         self.tabs.addTab(self.postprocess_tab, "Postprocess")
 

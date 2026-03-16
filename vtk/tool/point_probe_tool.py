@@ -34,9 +34,8 @@ class PointProbeTool(QObject):
     - 박스 이동 시 중심 좌표 시그널 발생
     """
 
-    # 시그널
-    center_moved = Signal(float, float, float)  # 박스 중심이 이동할 때 (x, y, z)
-    visibility_changed = Signal(bool)  # 가시성이 변경될 때
+    center_moved = Signal(float, float, float)
+    visibility_changed = Signal(bool)
 
     def __init__(self, vtk_widget: "VtkWidgetBase", parent: Optional[QObject] = None):
         super().__init__(parent)
@@ -45,11 +44,9 @@ class PointProbeTool(QObject):
         self._renderer = vtk_widget.renderer
         self._interactor = vtk_widget.interactor
 
-        # Box Widget 설정
         self._rep = vtkBoxRepresentation()
         self._rep.SetPlaceFactor(1.0)
 
-        # 외곽 박스만 숨기고 핸들은 유지
         self._rep.SetInsideOut(True)
         self._rep.OutlineFaceWiresOff()
         self._rep.OutlineCursorWiresOff()
@@ -61,8 +58,9 @@ class PointProbeTool(QObject):
         self._box_widget.SetInteractor(self._interactor)
         self._box_widget.Off()
         self._box_widget.AddObserver("InteractionEvent", self._on_interact)
+        self._interactor.AddObserver("MouseWheelForwardEvent", self._on_wheel_forward, 1.0)
+        self._interactor.AddObserver("MouseWheelBackwardEvent", self._on_wheel_backward, 1.0)
 
-        # 별도 중심 축 커서 (3축 라인)
         self._cursor_mapper = vtkPolyDataMapper()
         self._cursor_actor = vtkActor()
         self._cursor_actor.SetMapper(self._cursor_mapper)
@@ -74,21 +72,17 @@ class PointProbeTool(QObject):
 
         self._visible = False
 
-        # 원본 상태 저장
         self._original_opacity: Dict[int, float] = {}
         self._original_color: Dict[int, tuple] = {}
 
-        # 아웃라인 액터들
         self._outline_actors: Dict[int, vtkActor] = {}
 
-        # 저장된 박스 상태 (None이면 초기 위치 사용)
         self._saved_bounds: Optional[list] = None
-        self._saved_transform: Optional[vtkTransform] = None  # 저장된 변환 (회전 포함)
-        self._saved_selection_ids: Optional[set] = None  # 저장된 위치에 해당하는 선택 객체
-        self._box_size = 1.0  # 기본 박스 크기
-        self._probe_scale = 1.4  # 프로브 크기 배율 (40% 확장)
+        self._saved_transform: Optional[vtkTransform] = None
+        self._saved_selection_ids: Optional[set] = None
+        self._box_size = 1.0
+        self._probe_scale = 1.4
 
-        # 초기 박스 배치
         self._place_initial_box()
 
     @property
@@ -101,7 +95,6 @@ class PointProbeTool(QObject):
         bounds = [0] * 6
         self._renderer.ComputeVisiblePropBounds(bounds)
 
-        # 빈 씬인 경우 기본 bounds 사용
         if bounds == [0, 0, 0, 0, 0, 0] or all(b == 1.0 for b in bounds):
             bounds = [-1, 1, -1, 1, -1, 1]
 
@@ -135,19 +128,32 @@ class PointProbeTool(QObject):
         self._cursor_mapper.SetInputData(polydata)
         self._cursor_mapper.Update()
 
+    def _zoom(self, factor):
+        camera = self._renderer.GetActiveCamera()
+        if camera.GetParallelProjection():
+            camera.SetParallelScale(camera.GetParallelScale() / factor)
+        else:
+            camera.Dolly(factor)
+        self._renderer.ResetCameraClippingRange()
+        self._renderer.GetRenderWindow().Render()
+
+    def _on_wheel_forward(self, obj, event):
+        self._zoom(1.1)
+
+    def _on_wheel_backward(self, obj, event):
+        self._zoom(0.9)
+
     def _on_interact(self, caller, event):
         """박스 인터랙션 이벤트 핸들러"""
         bounds = list(self._rep.GetBounds())
         xmin, xmax, ymin, ymax, zmin, zmax = bounds
 
-        # 현재 위치와 변환, 선택 상태 저장
         self._saved_bounds = bounds
         self._saved_transform = vtkTransform()
         self._rep.GetTransform(self._saved_transform)
         manager = self._vtk_widget.obj_manager
         self._saved_selection_ids = manager.selected_ids.copy()
 
-        # 중심 축 커서 위치 업데이트
         self._update_cursor_from_bounds(bounds)
 
         cx = (xmin + xmax) / 2
@@ -179,7 +185,6 @@ class PointProbeTool(QObject):
         outline_actor.GetProperty().SetColor(*ObjectManager._SELECT_COLOR)
         outline_actor.GetProperty().SetLineWidth(3)
 
-        # 원본 액터의 변환 정보 복사
         outline_actor.SetPosition(actor.GetPosition())
         outline_actor.SetOrientation(actor.GetOrientation())
         outline_actor.SetScale(actor.GetScale())
@@ -204,7 +209,6 @@ class PointProbeTool(QObject):
         if not selected_ids:
             return
 
-        # 모든 객체 순회
         for obj_id, obj_data in manager._objects.items():
             if obj_data.removed:
                 continue
@@ -212,7 +216,6 @@ class PointProbeTool(QObject):
             actor = obj_data.actor
             prop = actor.GetProperty()
 
-            # 원본 상태 저장
             if obj_id not in self._original_opacity:
                 self._original_opacity[obj_id] = prop.GetOpacity()
             if obj_id not in self._original_color:
@@ -220,13 +223,11 @@ class PointProbeTool(QObject):
                 self._original_color[obj_id] = (color[0], color[1], color[2])
 
             if obj_id in selected_ids:
-                # 선택된 객체: 투명하게 표시 (프로브 박스가 잘 보이도록)
                 from ..core.object_manager import ObjectManager
                 prop.SetOpacity(0.3)
                 prop.SetColor(*ObjectManager._SELECT_COLOR)
                 self._create_outline(obj_id, actor)
             else:
-                # 비선택 객체: 더 투명하게
                 prop.SetOpacity(0.1)
 
     def _restore_original(self):
@@ -257,7 +258,6 @@ class PointProbeTool(QObject):
             self._place_initial_box()
             return
 
-        # 선택된 객체들의 bounds 계산
         bounds = [float('inf'), float('-inf'),
                   float('inf'), float('-inf'),
                   float('inf'), float('-inf')]
@@ -273,7 +273,6 @@ class PointProbeTool(QObject):
                 bounds[4] = min(bounds[4], obj_bounds[4])
                 bounds[5] = max(bounds[5], obj_bounds[5])
 
-        # bounds가 유효한 경우에만 적용
         if bounds[0] != float('inf'):
             self._rep.PlaceWidget(bounds)
 
@@ -285,22 +284,18 @@ class PointProbeTool(QObject):
         manager = self._vtk_widget.obj_manager
         current_selection = manager.selected_ids
 
-        # 저장된 위치가 있고, 같은 객체가 선택된 경우에만 저장된 위치와 회전 사용
         if (self._saved_bounds and
             self._saved_transform and
             self._saved_selection_ids is not None and
             self._saved_selection_ids == current_selection):
-            # 저장된 transform으로 위치/크기/회전 모두 복원
             self._rep.SetTransform(self._saved_transform)
         else:
-            # 새로운 객체이거나 선택이 변경됨 -> 새 위치로 시작
             self._place_box_by_selection()
 
         self._apply_highlight()
 
         self._box_widget.On()
 
-        # On() 후 bounds를 읽어야 transform이 반영된 실제 위치를 얻음
         bounds = list(self._rep.GetBounds())
         self._update_cursor_from_bounds(bounds)
         self._cursor_actor.SetVisibility(True)
@@ -316,21 +311,17 @@ class PointProbeTool(QObject):
         selected_ids = manager.selected_ids
 
         if selected_ids:
-            # 선택된 객체들의 bounds
             bounds = self._calculate_bounds(selected_ids)
         else:
-            # 전체 객체들의 bounds
             all_ids = [obj_id for obj_id, obj in manager._objects.items() if not obj.removed]
             bounds = self._calculate_bounds(all_ids)
 
         if bounds:
-            # 프로브 박스를 40% 확장
             expanded_bounds = self._expand_bounds(bounds, self._probe_scale)
             self._rep.PlaceWidget(expanded_bounds)
             self._update_cursor_from_bounds(expanded_bounds)
             self._saved_bounds = expanded_bounds
             self._saved_selection_ids = selected_ids.copy() if selected_ids else set()
-            # 새 위치에서는 회전 초기화
             self._saved_transform = None
 
     def _expand_bounds(self, bounds: list, scale: float) -> list:
@@ -378,11 +369,9 @@ class PointProbeTool(QObject):
                 bounds[4] = min(bounds[4], obj_bounds[4])
                 bounds[5] = max(bounds[5], obj_bounds[5])
 
-        # 유효한 bounds인지 확인
         if bounds[0] == float('inf'):
             return [-1, 1, -1, 1, -1, 1]
 
-        # padding 적용 (각 축에 대해 확장)
         if padding > 0:
             for i in range(3):
                 size = bounds[i*2 + 1] - bounds[i*2]
@@ -423,23 +412,19 @@ class PointProbeTool(QObject):
         selected_ids = manager.selected_ids
 
         if selected_ids:
-            # 선택된 객체들의 bounds 사용
             bounds = self._calculate_bounds(selected_ids)
         else:
-            # 전체 객체들의 bounds 사용
             all_ids = [obj_id for obj_id, obj in manager._objects.items() if not obj.removed]
             bounds = self._calculate_bounds(all_ids)
 
-        # 객체 중심 계산
         cx = (bounds[0] + bounds[1]) / 2
         cy = (bounds[2] + bounds[3]) / 2
         cz = (bounds[4] + bounds[5]) / 2
 
-        # 프로브 크기 40% 확장
         expanded_bounds = self._expand_bounds(bounds, self._probe_scale)
 
         self._saved_bounds = expanded_bounds
-        self._saved_transform = None  # 회전 초기화
+        self._saved_transform = None
         self._saved_selection_ids = selected_ids.copy() if selected_ids else set()
         self._rep.PlaceWidget(expanded_bounds)
         self._update_cursor_from_bounds(expanded_bounds)

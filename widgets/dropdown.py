@@ -83,7 +83,6 @@ class DropDownItemWidget(QWidget):
             self._outer_layout.addWidget(line)
             return
 
-        # Group frame container (blue border + rounded corners)
         self._frame = QFrame()
         self._frame.setObjectName("groupFrame")
         self._frame.setStyleSheet(_FRAME_STYLE)
@@ -93,7 +92,6 @@ class DropDownItemWidget(QWidget):
         self._frame_layout.setContentsMargins(0, 0, 0, 0)
         self._frame_layout.setSpacing(0)
 
-        # Header button
         self.button = QPushButton(name)
         self.button.setStyleSheet(_BTN_CLOSED)
         self.button.setCheckable(True)
@@ -102,7 +100,6 @@ class DropDownItemWidget(QWidget):
 
         self._frame_layout.addWidget(self.button)
 
-        # Content wrapper (holds sub_widget with padding)
         if self.sub_widget:
             self._content_wrap = QWidget()
             self._content_wrap.setObjectName("contentWrap")

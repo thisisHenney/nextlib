@@ -14,28 +14,25 @@ from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera
 
 
 class CADInteractorStyle(vtkInteractorStyleTrackballCamera):
-    DOUBLE_CLICK_TIME = 0.4  # 더블클릭 판정 시간 (초)
-    DOUBLE_CLICK_DIST = 10   # 더블클릭 판정 거리 (픽셀)
+    DOUBLE_CLICK_TIME = 0.4
+    DOUBLE_CLICK_DIST = 10
 
     def __init__(self, camera_controller=None, renderer=None, obj_manager=None):
         super().__init__()
 
         self.camera_controller = camera_controller
-        self.obj_manager = obj_manager  # 객체 관리자 참조
+        self.obj_manager = obj_manager
         if renderer is not None:
             self.SetDefaultRenderer(renderer)
 
-        # 마우스 상태
         self._is_rotating = False
         self._is_panning = False
         self._shift_pressed = False
         self._ctrl_pressed = False
 
-        # 더블클릭 감지용
         self._last_click_time = 0
         self._last_click_pos = (0, 0)
 
-        # 이벤트 등록
         self.AddObserver("LeftButtonPressEvent", self._on_left_button_down)
         self.AddObserver("LeftButtonReleaseEvent", self._on_left_button_up)
         self.AddObserver("MiddleButtonPressEvent", self._on_middle_button_down)
@@ -56,7 +53,6 @@ class CADInteractorStyle(vtkInteractorStyleTrackballCamera):
         self._shift_pressed = interactor.GetShiftKey()
         self._ctrl_pressed = interactor.GetControlKey()
 
-        # 더블클릭 감지
         current_time = time.time()
         current_pos = interactor.GetEventPosition()
 
@@ -72,19 +68,15 @@ class CADInteractorStyle(vtkInteractorStyleTrackballCamera):
         self._last_click_pos = current_pos
 
         if is_double_click and not self._shift_pressed and not self._ctrl_pressed:
-            # 더블클릭 처리
             self._handle_double_click()
             return
 
         if self._shift_pressed:
-            # Shift + 좌클릭 = 패닝
             self._is_panning = True
             self.OnMiddleButtonDown()
         elif self._ctrl_pressed:
-            # Ctrl + 좌클릭 = 줌
             self.StartDolly()
         else:
-            # 좌클릭 = 회전
             self._is_rotating = True
             self.OnLeftButtonDown()
 
@@ -114,23 +106,24 @@ class CADInteractorStyle(vtkInteractorStyleTrackballCamera):
             self.OnMouseMove()
             self._sync_camera()
 
-    def _on_wheel_forward(self, obj, event):
+    def _zoom(self, factor):
         renderer = self.GetDefaultRenderer()
-        if renderer:
-            camera = renderer.GetActiveCamera()
-            camera.Dolly(1.1)
-            renderer.ResetCameraClippingRange()
-            self.GetInteractor().Render()
-            self._sync_camera()
+        if not renderer:
+            return
+        camera = renderer.GetActiveCamera()
+        if camera.GetParallelProjection():
+            camera.SetParallelScale(camera.GetParallelScale() / factor)
+        else:
+            camera.Dolly(factor)
+        renderer.ResetCameraClippingRange()
+        self.GetInteractor().Render()
+        self._sync_camera()
+
+    def _on_wheel_forward(self, obj, event):
+        self._zoom(1.1)
 
     def _on_wheel_backward(self, obj, event):
-        renderer = self.GetDefaultRenderer()
-        if renderer:
-            camera = renderer.GetActiveCamera()
-            camera.Dolly(0.9)
-            renderer.ResetCameraClippingRange()
-            self.GetInteractor().Render()
-            self._sync_camera()
+        self._zoom(0.9)
 
     def reset_state(self):
         """마우스가 위젯을 벗어나거나 포커스를 잃을 때 Python 플래그만 리셋
@@ -153,7 +146,6 @@ class CADInteractorStyle(vtkInteractorStyleTrackballCamera):
         picker.Pick(click_pos[0], click_pos[1], 0, renderer)
         picked_actor = picker.GetActor()
 
-        # 객체 관리자가 있으면 객체 선택 처리
         if self.obj_manager:
             picked_id = None
             if picked_actor:
@@ -163,11 +155,9 @@ class CADInteractorStyle(vtkInteractorStyleTrackballCamera):
                         break
 
             if picked_id is not None:
-                # 객체 더블클릭: 이미 선택된 객체면 해제, 아니면 선택
                 if picked_id in self.obj_manager.selected_ids:
                     self.obj_manager.toggle_selection(picked_id)
                 else:
                     self.obj_manager.select_single(picked_id)
             else:
-                # 빈 공간 더블클릭: 선택 해제
                 self.obj_manager.clear_selection()

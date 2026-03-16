@@ -93,7 +93,7 @@ class ResidualPlotWidget(QWidget):
         self.canvas.mpl_connect("motion_notify_event", self.on_mouse_move)
 
     def on_mouse_press(self, event):
-        if event.button == 1 and event.inaxes == self.axes:  # 왼쪽 버튼
+        if event.button == 1 and event.inaxes == self.axes:
             self.dragging = True
             self.drag_start_xdata = event.xdata
             self.drag_start_xlim = self.axes.get_xlim()
@@ -158,7 +158,7 @@ def demo():
 
     widget.axes.set_yscale("log")
 
-    times = np.linspace(0, 1000, 500)  # 0~5초 사이 50개 지점
+    times = np.linspace(0, 1000, 500)
     ux_res = 1e-1 * np.exp(-times * 1.2)
     uy_res = 2e-1 * np.exp(-times * 0.9)
     p_res  = 3e-1 * np.exp(-times * 1.5)

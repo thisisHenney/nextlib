@@ -43,10 +43,10 @@ from vtkmodules.vtkFiltersGeometry import vtkGeometryFilter
 class MeshLoaderWorker(QThread):
     """비동기 메쉬 로딩을 위한 워커 스레드"""
 
-    file_loaded = Signal(str, str, object)  # (file_path, name, actor)
-    progress = Signal(int, int)  # (current, total)
+    file_loaded = Signal(str, str, object)
+    progress = Signal(int, int)
     finished_all = Signal()
-    error = Signal(str, str)  # (file_path, error_message)
+    error = Signal(str, str)
 
     def __init__(self, loader: "MeshLoader", files: List[str], parent=None):
         super().__init__(parent)
@@ -92,13 +92,11 @@ class MeshLoader(QObject):
         error: 로드 실패 (file_path, error_message)
     """
 
-    # 비동기 로딩 시그널
-    file_loaded = Signal(str, str, object)  # (file_path, name, actor)
-    progress = Signal(int, int)  # (current, total)
+    file_loaded = Signal(str, str, object)
+    progress = Signal(int, int)
     all_finished = Signal()
-    error = Signal(str, str)  # (file_path, error_message)
+    error = Signal(str, str)
 
-    # 지원 확장자
     SUPPORTED_EXTENSIONS = {
         '.stl', '.obj', '.ply',
         '.vtk', '.vtu', '.vtp', '.vtm',
@@ -108,7 +106,7 @@ class MeshLoader(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.colors = vtkNamedColors()
-        self._default_color = (0.6, 0.65, 0.7)  # Fusion 360 스타일 미디엄 그레이
+        self._default_color = (0.6, 0.65, 0.7)
         self._worker = None
 
     def load_async(
@@ -137,24 +135,19 @@ class MeshLoader(QObject):
                 # 모든 로딩 완료 처리
                 pass
         """
-        # 단일 파일을 리스트로 변환
         if isinstance(files, (str, Path)):
             files = [files]
 
-        # 문자열로 변환
         file_list = [str(f) for f in files]
 
-        # 기존 워커가 있으면 취소
         self.cancel_async()
 
-        # 새 워커 생성 및 시그널 연결
         self._worker = MeshLoaderWorker(self, file_list, self)
         self._worker.file_loaded.connect(self.file_loaded)
         self._worker.progress.connect(self.progress)
         self._worker.finished_all.connect(self._on_worker_finished)
         self._worker.error.connect(self.error)
 
-        # 워커 시작
         self._worker.start()
 
     def cancel_async(self) -> None:
@@ -215,7 +208,6 @@ class MeshLoader(QObject):
             print(f"[MeshLoader] Unsupported format: {ext}")
             return None
 
-    # ===== 개별 로더 =====
 
     def load_stl(
         self,
@@ -379,13 +371,11 @@ class MeshLoader(QObject):
         reader.CacheMeshOn()
         reader.Update()
 
-        # 시간값 설정
         time_values = reader.GetTimeValues()
         if time_values and time_values.GetNumberOfTuples() > 0:
             if time_value is not None:
                 reader.SetTimeValue(time_value)
             else:
-                # 마지막 시간값 사용
                 last_time = time_values.GetValue(time_values.GetNumberOfTuples() - 1)
                 reader.SetTimeValue(last_time)
             reader.Update()
@@ -408,19 +398,16 @@ class MeshLoader(QObject):
         """
         case_path = Path(case_dir)
 
-        # .foam 파일 찾기 또는 생성
         foam_files = list(case_path.glob("*.foam")) + list(case_path.glob("*.OpenFOAM"))
 
         if foam_files:
             return self.load_openfoam(foam_files[0], color)
 
-        # polyMesh 폴더 확인
         polymesh_path = case_path / "constant" / "polyMesh"
         if not polymesh_path.exists():
             print(f"[MeshLoader] polyMesh not found: {polymesh_path}")
             return []
 
-        # 임시 .foam 파일 생성 후 로드
         temp_foam = case_path / "temp.foam"
         try:
             temp_foam.touch()
@@ -430,7 +417,6 @@ class MeshLoader(QObject):
             if temp_foam.exists():
                 temp_foam.unlink()
 
-    # ===== 헬퍼 메서드 =====
 
     def _check_file(self, file_path: Union[str, Path]) -> bool:
         """파일 존재 확인"""
@@ -459,7 +445,6 @@ class MeshLoader(QObject):
 
     def _dataset_to_actor(self, dataset, color: Tuple[int, int, int] = None) -> vtkActor:
         """DataSet을 Actor로 변환 (GeometryFilter 사용)"""
-        # Unstructured Grid 등을 PolyData로 변환
         geometry = vtkGeometryFilter()
         geometry.SetInputData(dataset)
         geometry.Update()
@@ -491,7 +476,6 @@ class MeshLoader(QObject):
             if block is None:
                 continue
 
-            # 재귀적으로 처리 (중첩 MultiBlock)
             if hasattr(block, 'GetNumberOfBlocks'):
                 actors.extend(self._multiblock_to_actors(block, color))
             elif hasattr(block, 'GetNumberOfCells') and block.GetNumberOfCells() > 0:
@@ -531,7 +515,6 @@ class MeshLoader(QObject):
 
         return actors
 
-    # ===== 정보 조회 =====
 
     def get_info(self, file_path: Union[str, Path]) -> dict:
         """파일 정보 조회 (로드하지 않고)

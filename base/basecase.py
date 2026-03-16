@@ -26,9 +26,9 @@ logger = logging.getLogger(__name__)
 
 class SaveMode(Enum):
     """저장 모드"""
-    NORMAL = "normal"           # 일반 저장
-    BACKUP = "backup"           # 백업 포함 저장
-    SAFE = "safe"              # 안전 저장 (임시파일 -> 원본 대체)
+    NORMAL = "normal"
+    BACKUP = "backup"
+    SAFE = "safe"
 
 
 @dataclass
@@ -64,14 +64,13 @@ class BaseCase:
         """초기화 후 처리"""
         self._initialized = False
         self._change_callbacks: List[Callable] = []
-        self._dirty = False  # 변경 여부 플래그
+        self._dirty = False
         self._auto_save = False
         self._backup_enabled = True
         self._max_backups = 5
-        self._original_data = {}  # 로드된 원본 데이터
+        self._original_data = {}
         self._excluded_fields = {"path", "file", "name"}
 
-        # 내부 상태 필드 (저장하지 않음)
         self._internal_fields = {
             "_initialized", "_change_callbacks", "_dirty", "_auto_save",
             "_backup_enabled", "_max_backups", "_original_data",
@@ -80,9 +79,6 @@ class BaseCase:
 
         self._initialized = True
 
-    # ============================================================
-    # 기본 설정 메서드
-    # ============================================================
 
     def init(self, name: str = "", file: str = "", path: str = ""):
         """
@@ -146,13 +142,9 @@ class BaseCase:
         self._backup_enabled = enabled
         self._max_backups = max_backups
 
-    # ============================================================
-    # 변경 감지 및 이벤트 시스템
-    # ============================================================
 
     def __setattr__(self, name: str, value: Any):
         """속성 변경 감지"""
-        # 초기화 전이거나 내부 필드는 그냥 설정
         if not hasattr(self, '_initialized') or not self._initialized:
             super().__setattr__(name, value)
             return
@@ -161,17 +153,14 @@ class BaseCase:
             super().__setattr__(name, value)
             return
 
-        # 기존 값과 다를 때만 변경 처리
         old_value = getattr(self, name, None)
         if old_value != value:
             super().__setattr__(name, value)
 
-            # dirty 플래그 설정 (제외 필드 제외)
             if name not in self._excluded_fields:
                 self._dirty = True
                 self._on_change(name, old_value, value)
 
-                # 자동 저장
                 if self._auto_save:
                     try:
                         self.save()
@@ -189,7 +178,6 @@ class BaseCase:
             old_value: 이전 값
             new_value: 새 값
         """
-        # 콜백 실행
         for callback in self._change_callbacks:
             try:
                 callback(field_name, old_value, new_value)
@@ -226,9 +214,6 @@ class BaseCase:
         """변경 사항 초기화"""
         self._dirty = False
 
-    # ============================================================
-    # 저장 메서드
-    # ============================================================
 
     def save(self, mode: SaveMode = SaveMode.SAFE) -> bool:
         """
@@ -247,14 +232,11 @@ class BaseCase:
         file_path = Path(self.path) / self.file
 
         try:
-            # 데이터 준비
             data = self._to_dict()
 
-            # 백업 생성
             if self._backup_enabled and file_path.exists():
                 self._create_backup(file_path)
 
-            # 저장 모드에 따라 처리
             if mode == SaveMode.SAFE:
                 self._save_safe(file_path, data)
             else:
@@ -279,17 +261,14 @@ class BaseCase:
         temp_file = file_path.with_suffix('.tmp')
 
         try:
-            # 임시 파일에 저장
             with open(temp_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
 
-            # 원본 파일 대체
             if file_path.exists():
                 file_path.unlink()
             temp_file.rename(file_path)
 
         except Exception as e:
-            # 실패 시 임시 파일 삭제
             if temp_file.exists():
                 temp_file.unlink()
             raise e
@@ -301,14 +280,11 @@ class BaseCase:
             backup_name = f"{file_path.stem}_backup_{timestamp}{file_path.suffix}"
             backup_path = file_path.parent / "backups"
 
-            # 백업 디렉토리 생성
             backup_path.mkdir(exist_ok=True)
 
-            # 백업 파일 복사
             backup_file = backup_path / backup_name
             shutil.copy2(file_path, backup_file)
 
-            # 오래된 백업 삭제
             self._cleanup_old_backups(backup_path, file_path.stem)
 
             logger.info(f"Backup created: {backup_file}")
@@ -325,7 +301,6 @@ class BaseCase:
                 reverse=True
             )
 
-            # 최대 개수를 초과하는 백업 삭제
             for old_backup in backups[self._max_backups:]:
                 old_backup.unlink()
                 logger.info(f"Removed old backup: {old_backup}")
@@ -333,9 +308,6 @@ class BaseCase:
         except Exception as e:
             logger.warning(f"Failed to cleanup old backups: {e}")
 
-    # ============================================================
-    # 로드 메서드
-    # ============================================================
 
     def load(self, create_if_missing: bool = True) -> bool:
         """
@@ -353,7 +325,6 @@ class BaseCase:
 
         file_path = Path(self.path) / self.file
 
-        # 파일이 없으면 생성
         if not file_path.exists():
             if create_if_missing:
                 logger.info(f"File not found, creating new: {file_path}")
@@ -363,11 +334,9 @@ class BaseCase:
                 return False
 
         try:
-            # JSON 로드
             with open(file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
-            # 데이터 적용
             self._from_dict(data)
 
             self._original_data = data.copy()
@@ -378,7 +347,6 @@ class BaseCase:
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in {file_path}: {e}")
 
-            # 백업에서 복구 시도
             if self._try_restore_from_backup(file_path):
                 return True
 
@@ -409,7 +377,6 @@ class BaseCase:
 
                     self._from_dict(data)
 
-                    # 복구된 데이터를 저장
                     self.save()
 
                     logger.info(f"Successfully restored from backup: {backup}")
@@ -429,9 +396,6 @@ class BaseCase:
         """파일에서 다시 로드 (변경사항 버림)"""
         return self.load(create_if_missing=False)
 
-    # ============================================================
-    # 직렬화 메서드
-    # ============================================================
 
     def _to_dict(self, include_internal: bool = False) -> dict:
         """
@@ -448,24 +412,20 @@ class BaseCase:
         for field in fields(self):
             field_name = field.name
 
-            # 제외 필드 건너뛰기
             if field_name in self._excluded_fields:
                 continue
 
-            # 내부 필드 건너뛰기
             if not include_internal and field_name in self._internal_fields:
                 continue
 
             value = getattr(self, field_name)
 
-            # 중첩 dataclass 처리
             if is_dataclass(value):
                 if hasattr(value, '_to_dict'):
                     result[field_name] = value._to_dict()
                 else:
                     result[field_name] = asdict(value)
 
-            # 리스트 내부의 dataclass 처리
             elif isinstance(value, list):
                 result[field_name] = [
                     item._to_dict() if is_dataclass(item) and hasattr(item, '_to_dict')
@@ -474,7 +434,6 @@ class BaseCase:
                     for item in value
                 ]
 
-            # 일반 값
             else:
                 result[field_name] = value
 
@@ -490,16 +449,13 @@ class BaseCase:
         for key, value in data.items():
             if hasattr(self, key) and key not in self._excluded_fields:
                 try:
-                    # 필드 타입 가져오기
                     field_type = None
                     for field in fields(self):
                         if field.name == key:
                             field_type = field.type
                             break
 
-                    # 타입에 맞게 변환
                     if field_type and is_dataclass(field_type):
-                        # 중첩 dataclass 처리
                         if isinstance(value, dict):
                             nested_obj = field_type()
                             if hasattr(nested_obj, '_from_dict'):
@@ -517,9 +473,6 @@ class BaseCase:
                 except Exception as e:
                     logger.warning(f"Failed to set field '{key}': {e}")
 
-    # ============================================================
-    # 유틸리티 메서드
-    # ============================================================
 
     def get_changes(self) -> Dict[str, Any]:
         """

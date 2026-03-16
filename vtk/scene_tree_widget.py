@@ -31,9 +31,8 @@ class SceneTreeWidget(QFrame):
     group_visibility_changed = Signal(str, bool)
     selection_changed = Signal(list)
 
-    # 눈 아이콘 (Unicode)
-    ICON_VISIBLE = "\U0001F441"  # 👁
-    ICON_HIDDEN = "\u25CB"  # ○ (빈 원)
+    ICON_VISIBLE = "\U0001F441"
+    ICON_HIDDEN = "\u25CB"
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -56,27 +55,23 @@ class SceneTreeWidget(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # 헤더 바
         header = QFrame()
         header.setFixedHeight(28)
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(4, 2, 4, 2)
         header_layout.setSpacing(4)
 
-        # 접기/펼치기 버튼
         self._toggle_btn = QToolButton()
-        self._toggle_btn.setText("\u25C0")  # ◀
+        self._toggle_btn.setText("\u25C0")
         self._toggle_btn.setFixedSize(20, 20)
         self._toggle_btn.clicked.connect(self._on_toggle_clicked)
         header_layout.addWidget(self._toggle_btn)
 
-        # 제목
         self._title_label = QPushButton("Scene")
         self._title_label.setFlat(True)
         self._title_label.clicked.connect(self._on_toggle_clicked)
         header_layout.addWidget(self._title_label, stretch=1)
 
-        # 전체 보이기/숨기기 버튼
         self._show_all_btn = QToolButton()
         self._show_all_btn.setText(self.ICON_VISIBLE)
         self._show_all_btn.setToolTip("Show All")
@@ -93,7 +88,6 @@ class SceneTreeWidget(QFrame):
 
         layout.addWidget(header)
 
-        # 트리 위젯
         self._tree = QTreeWidget()
         self._tree.setHeaderHidden(True)
         self._tree.setColumnCount(2)
@@ -103,7 +97,6 @@ class SceneTreeWidget(QFrame):
         self._tree.itemSelectionChanged.connect(self._on_tree_selection_changed)
         self._tree.itemClicked.connect(self._on_item_clicked)
 
-        # 컬럼 크기 조정 (이름 | 눈 아이콘)
         tree_header = self._tree.header()
         tree_header.setStretchLastSection(False)
         tree_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
@@ -112,7 +105,6 @@ class SceneTreeWidget(QFrame):
 
         layout.addWidget(self._tree)
 
-        # 초기 크기
         self.setMinimumWidth(150)
         self.setMaximumWidth(300)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
@@ -124,7 +116,6 @@ class SceneTreeWidget(QFrame):
             obj_manager: VTK ObjectManager 인스턴스
         """
         if self._obj_manager:
-            # 기존 연결 해제
             try:
                 self._obj_manager.object_added.disconnect(self._on_object_added)
                 self._obj_manager.object_removed.disconnect(self._on_object_removed)
@@ -139,7 +130,6 @@ class SceneTreeWidget(QFrame):
             obj_manager.object_removed.connect(self._on_object_removed)
             obj_manager.selection_changed.connect(self._on_vtk_selection_changed)
 
-            # 기존 객체들 로드
             self._load_existing_objects()
 
     def _load_existing_objects(self):
@@ -157,7 +147,6 @@ class SceneTreeWidget(QFrame):
 
     def _add_object_to_tree(self, obj_id: int, name: str, group: str, visible: bool = True):
         """트리에 객체 추가"""
-        # 그룹 아이템 확인/생성
         if group not in self._group_items:
             group_item = QTreeWidgetItem(self._tree)
             group_item.setText(0, group.capitalize())
@@ -169,7 +158,6 @@ class SceneTreeWidget(QFrame):
 
         group_item = self._group_items[group]
 
-        # 객체 아이템 생성
         obj_item = QTreeWidgetItem(group_item)
         obj_item.setText(0, name)
         obj_item.setText(1, self.ICON_VISIBLE if visible else self.ICON_HIDDEN)
@@ -188,7 +176,6 @@ class SceneTreeWidget(QFrame):
         if parent:
             parent.removeChild(obj_item)
 
-            # 그룹이 비어있으면 그룹도 제거
             if parent.childCount() == 0:
                 data = parent.data(0, Qt.ItemDataRole.UserRole)
                 if data and data.get("type") == "group":
@@ -246,7 +233,6 @@ class SceneTreeWidget(QFrame):
             if data and data.get("type") == "object":
                 selected_ids.append(data["id"])
 
-        # VTK 선택 업데이트
         self._obj_manager.blockSignals(True)
         if selected_ids:
             self._obj_manager.select_multiple(selected_ids)
@@ -256,7 +242,6 @@ class SceneTreeWidget(QFrame):
 
         self._sync_selection_lock = False
 
-        # 시그널 발신
         self.selection_changed.emit(selected_ids)
 
     def _on_item_clicked(self, item: QTreeWidgetItem, column: int):
@@ -271,7 +256,6 @@ class SceneTreeWidget(QFrame):
         item_type = data.get("type")
 
         if item_type == "group":
-            # 그룹 가시성 토글
             group_name = data.get("name")
             current_visible = self._group_visibility.get(group_name, True)
             new_visible = not current_visible
@@ -279,7 +263,6 @@ class SceneTreeWidget(QFrame):
             self._set_group_visibility(group_name, new_visible)
 
         elif item_type == "object":
-            # 객체 가시성 토글
             obj_id = data.get("id")
             current_visible = data.get("visible", True)
             new_visible = not current_visible
@@ -297,7 +280,6 @@ class SceneTreeWidget(QFrame):
         item.setData(0, Qt.ItemDataRole.UserRole, data)
         item.setText(1, self.ICON_VISIBLE if visible else self.ICON_HIDDEN)
 
-        # ObjectManager에 반영
         if self._obj_manager:
             obj = self._obj_manager.get(obj_id)
             if obj:
@@ -316,7 +298,6 @@ class SceneTreeWidget(QFrame):
         group_item = self._group_items[group_name]
         group_item.setText(1, self.ICON_VISIBLE if visible else self.ICON_HIDDEN)
 
-        # 그룹 내 모든 객체 가시성 업데이트
         for i in range(group_item.childCount()):
             child = group_item.child(i)
             data = child.data(0, Qt.ItemDataRole.UserRole)
@@ -326,13 +307,11 @@ class SceneTreeWidget(QFrame):
                 child.setData(0, Qt.ItemDataRole.UserRole, data)
                 child.setText(1, self.ICON_VISIBLE if visible else self.ICON_HIDDEN)
 
-                # ObjectManager에 반영
                 if self._obj_manager:
                     obj = self._obj_manager.get(obj_id)
                     if obj:
                         obj.actor.SetVisibility(visible)
 
-        # 렌더링 업데이트
         if self._obj_manager:
             self._obj_manager._render()
 
@@ -343,14 +322,14 @@ class SceneTreeWidget(QFrame):
         self._collapsed = not self._collapsed
 
         if self._collapsed:
-            self._toggle_btn.setText("\u25B6")  # ▶
+            self._toggle_btn.setText("\u25B6")
             self._tree.hide()
             self._show_all_btn.hide()
             self._hide_all_btn.hide()
             self.setMaximumWidth(30)
             self.setMinimumWidth(30)
         else:
-            self._toggle_btn.setText("\u25C0")  # ◀
+            self._toggle_btn.setText("\u25C0")
             self._tree.show()
             self._show_all_btn.show()
             self._hide_all_btn.show()

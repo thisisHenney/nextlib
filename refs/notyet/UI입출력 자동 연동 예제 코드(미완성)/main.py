@@ -13,28 +13,23 @@ class MainWindow(QWidget):
 
         self.data = {}
 
-        # 상단 레이아웃 (버튼)
         top_layout = QHBoxLayout()
         self.load_btn = QPushButton("파일에서 읽어오기")
         self.save_btn = QPushButton("파일로 저장하기")
         top_layout.addWidget(self.load_btn)
         top_layout.addWidget(self.save_btn)
 
-        # QComboBox1은 버튼 아래에 배치
         self.combo1 = QComboBox()
         self.combo1.addItems(["A", "B", "C"])
 
-        # 그룹박스1 (QComboBox1)
         self.groupbox1 = QGroupBox("AComboBox1 그룹")
         gb1_layout = QVBoxLayout()
         gb1_layout.addWidget(self.combo1)
 
-        # Label2(QLineEdit)는 QComboBox1과만 연동
         gb1_layout.addWidget(QLabel("Label2 텍스트:"))
         self.label2 = QLineEdit("Label2")
         gb1_layout.addWidget(self.label2)
 
-        # 그룹박스2 (QComboBox2) - 그룹박스1의 하위
         self.groupbox2 = QGroupBox("QComboBox2 연동")
         gb2_layout = QVBoxLayout()
         self.lineedit2 = QLineEdit()
@@ -45,7 +40,6 @@ class MainWindow(QWidget):
         gb2_layout.addWidget(self.combo2)
         self.groupbox2.setLayout(gb2_layout)
 
-        # 그룹박스3 (QComboBox3) - 그룹박스2의 하위
         self.groupbox3 = QGroupBox("QComboBox3 연동")
         gb3_layout = QVBoxLayout()
         self.label3 = QLineEdit("Label3")
@@ -59,29 +53,25 @@ class MainWindow(QWidget):
         gb3_layout.addWidget(self.combo3)
         self.groupbox3.setLayout(gb3_layout)
 
-        # 계층 구조 반영
         gb2_layout.addWidget(self.groupbox3)
         gb1_layout.addWidget(self.groupbox2)
         self.groupbox1.setLayout(gb1_layout)
 
-        # 메인 레이아웃
         main_layout = QVBoxLayout()
         main_layout.addLayout(top_layout)
         main_layout.addWidget(self.groupbox1)
         self.setLayout(main_layout)
 
-        # 시그널 연결
         self.combo1.currentIndexChanged.connect(self.on_combo1_changed)
         self.combo2.currentIndexChanged.connect(self.on_combo2_changed)
         self.combo3.currentIndexChanged.connect(self.save_all)
         self.lineedit2.textChanged.connect(self.save_lineedit2)
         self.lineedit3.textChanged.connect(self.save_all)
-        self.label2.textChanged.connect(self.save_label2)  # Label2는 QComboBox1과만 연동
+        self.label2.textChanged.connect(self.save_label2)
         self.label3.textChanged.connect(self.save_all)
         self.load_btn.clicked.connect(self.load_data)
         self.save_btn.clicked.connect(self.save_data)
 
-        # 초기화
         self.on_combo1_changed(0)
 
     def save_label2(self):
@@ -138,7 +128,6 @@ class MainWindow(QWidget):
         c1, c2 = self.combo1.currentText(), self.combo2.currentText()
         val = self.data.get(c1, {}).get(c2, {})
         self.lineedit2.setText(val.get('lineedit2', ''))
-        # QComboBox3 관련 값
         c3 = self.combo3.currentText()
         subval = val.get('sub', {}).get(c3, {})
         self.label3.setText(subval.get('label3', 'Label3'))

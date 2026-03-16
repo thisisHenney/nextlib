@@ -29,7 +29,6 @@ class ChangeDataUtil(BaseUtil):
     def to_text(self):
         return "\n".join(self.lines)
 
-    # Remove
     def remove(self, route: str):
         if self.lines is None or self.root_node is None:
             return False
@@ -197,7 +196,6 @@ class ChangeDataUtil(BaseUtil):
         self.mark_dirty()
         return True
 
-    # Rename Keyname
     def rename(self, route: str, new_key: str):
         node = self._find_node(self.root_node, route)
         if node is None:
@@ -227,7 +225,6 @@ class ChangeDataUtil(BaseUtil):
         self.mark_dirty()
         return True
 
-    # Set(Change)
     def _resolve_name_to_index(self, route: str):
         parts = [p for p in route.split(".") if p]
         if len(parts) < 2:
@@ -320,7 +317,6 @@ class ChangeDataUtil(BaseUtil):
         else:
             value_str = str(new_value)
 
-        # 주석보존
         line = self.lines[node.line_start]
 
         comment_pos = line.find("//", node.value_col_end)
@@ -341,7 +337,6 @@ class ChangeDataUtil(BaseUtil):
         self.lines[node.line_start] = new_line
         node.value = new_value
         self.mark_dirty()
-        # self._rebuild_node()
         self._invalidate_cache()
         return True
 
@@ -680,7 +675,6 @@ class ChangeDataUtil(BaseUtil):
             return False
         return False
 
-    # Clear dictionary or list contents
     def clear(self, route: str):
         """Clear dictionary or list contents while keeping the structure"""
         if self.lines is None or self.root_node is None:
@@ -690,25 +684,20 @@ class ChangeDataUtil(BaseUtil):
         if node is None:
             return False
 
-        # Handle dictionary (has block_end_line)
         if node.block_end_line is not None:
-            # Delete all lines between the opening and closing braces
-            start = node.line_start + 2  # Skip key line and opening brace
-            end = node.block_end_line     # Keep closing brace
+            start = node.line_start + 2
+            end = node.block_end_line
 
             if start < end:
                 del self.lines[start:end]
 
-            # Clear children nodes
             node.children = []
 
             self._rebuild_node()
             self._invalidate_cache()
             return True
 
-        # Handle list (value is a list)
         if isinstance(node.value, list):
-            # Find the line with opening parenthesis
             start = node.line_start
             i = start
             while i < len(self.lines) and "(" not in self.lines[i]:
@@ -718,7 +707,6 @@ class ChangeDataUtil(BaseUtil):
 
             list_start = i
 
-            # Find the line with closing parenthesis
             list_end = None
             depth = 0
             for j in range(list_start, len(self.lines)):
@@ -731,11 +719,9 @@ class ChangeDataUtil(BaseUtil):
             if list_end is None:
                 return False
 
-            # Delete all lines between parentheses
             if list_start + 1 < list_end:
                 del self.lines[list_start + 1:list_end]
 
-            # Update node value
             node.value = []
             if hasattr(node, 'children'):
                 node.children = []

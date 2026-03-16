@@ -13,7 +13,7 @@ class ObjectData:
     path: str = ""
     visible: bool = True
     opacity: float = 1.0
-    color: tuple = (220, 220, 220)  # RGB 0-255
+    color: tuple = (220, 220, 220)
     view_style: str = "surface"
     removed: bool = False
     metadata: dict = field(default_factory=dict)

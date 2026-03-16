@@ -30,7 +30,6 @@ if TYPE_CHECKING:
     from .object_manager import ObjectManager
 
 
-# ===== Command 인터페이스 =====
 
 class Command(ABC):
     """명령 인터페이스"""
@@ -51,7 +50,6 @@ class Command(ABC):
         return self.__class__.__name__
 
 
-# ===== 구체적인 Command 클래스들 =====
 
 class AddObjectCommand(Command):
     """객체 추가 명령"""
@@ -85,14 +83,12 @@ class RemoveObjectCommand(Command):
         self._obj_data = None
 
     def execute(self):
-        # 제거 전 데이터 백업
         self._obj_data = self._manager.get(self._obj_id)
         if self._obj_data:
             self._manager.remove(self._obj_id)
 
     def undo(self):
         if self._obj_data:
-            # 객체 복원
             self._obj_data.removed = False
             self._manager.renderer.AddActor(self._obj_data.actor)
             self._manager._objects[self._obj_id] = self._obj_data
@@ -170,7 +166,7 @@ class ChangeColorCommand(Command):
     def __init__(self, manager: "ObjectManager", obj_id: int, color: tuple):
         self._manager = manager
         self._obj_id = obj_id
-        self._new_value = color  # RGB 0-255
+        self._new_value = color
         self._old_value: Optional[tuple] = None
 
     def execute(self):
@@ -197,7 +193,6 @@ class ChangeColorCommand(Command):
         return f"Set color={self._new_value}"
 
 
-# ===== Command History =====
 
 class CommandHistory:
     """명령 히스토리 관리자"""
@@ -209,18 +204,14 @@ class CommandHistory:
 
     def execute(self, command: Command) -> Any:
         """명령 실행 및 히스토리 추가"""
-        # 현재 위치 이후의 명령들 삭제 (새로운 분기)
         if self._current_index < len(self._commands) - 1:
             self._commands = self._commands[:self._current_index + 1]
 
-        # 명령 실행
         result = command.execute()
 
-        # 히스토리 추가
         self._commands.append(command)
         self._current_index += 1
 
-        # 최대 히스토리 제한
         if len(self._commands) > self._max_history:
             self._commands.pop(0)
             self._current_index -= 1
@@ -280,7 +271,6 @@ class CommandHistory:
         return len(self._commands)
 
 
-# ===== UndoableManager =====
 
 class UndoableManager:
     """Undo/Redo를 지원하는 ObjectManager 래퍼"""
@@ -294,7 +284,6 @@ class UndoableManager:
         """히스토리 객체 접근"""
         return self._history
 
-    # ===== Undo 가능한 작업들 =====
 
     def add(self, actor, name: str = "", group: str = "default") -> int:
         """객체 추가 (Undo 가능)"""
@@ -321,7 +310,6 @@ class UndoableManager:
         cmd = ChangeColorCommand(self._manager, obj_id, color)
         self._history.execute(cmd)
 
-    # ===== Undo/Redo =====
 
     def undo(self) -> bool:
         """실행 취소"""
@@ -337,7 +325,6 @@ class UndoableManager:
     def can_redo(self) -> bool:
         return self._history.can_redo()
 
-    # ===== 기존 ObjectManager 메서드 전달 =====
 
     def __getattr__(self, name):
         """래핑된 ObjectManager의 메서드/속성 접근"""

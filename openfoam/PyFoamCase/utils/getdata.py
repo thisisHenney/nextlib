@@ -75,7 +75,6 @@ class GetDataUtil:
 
         return cur
 
-    # Get
     def has_key(self, data: dict, route: str) -> bool:
         return self._resolve(data, route) is not None
 

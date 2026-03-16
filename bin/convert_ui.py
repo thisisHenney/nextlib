@@ -3,9 +3,8 @@ import sys
 from pathlib import Path
 import subprocess
 
-# Add nextlib parent directory to path
 _current_file = Path(__file__).resolve()
-_nextlib_root = _current_file.parent.parent.parent  # Go up to /home/test/lib
+_nextlib_root = _current_file.parent.parent.parent
 if str(_nextlib_root) not in sys.path:
     sys.path.insert(0, str(_nextlib_root))
 
@@ -14,7 +13,7 @@ from nextlib.utils.file import get_encoding_type
 
 
 def modify_ui_py_file(file_path, disable_centralwidget_set):
-    encoding_type = get_encoding_type(file_path)  # 다시 확인
+    encoding_type = get_encoding_type(file_path)
     with open(file_path, 'r', encoding='utf-8') as f:
         lines = f.readlines()
 
@@ -40,8 +39,6 @@ if __name__ == '__main__':
     force_update = False
     disable_centralwidget_set = False
     
-    # 첫번째 인자는 터미널의 실행 위치(CUR_DIR)
-    # 두번째 인자부터 실제 변환 대상
     args = sys.argv[1:]
     
     if '-f' in args:
@@ -87,16 +84,13 @@ if __name__ == '__main__':
         else:
             print(f' [{i + 1}/{totalNum}] Converting... {source.name:<16} -> {source.stem}_ui.py')
 
-            # Cross-platform uic command
-            if os.name == 'nt':  # Windows
+            if os.name == 'nt':
                 uic = Path(PySide6.__file__).parent / "uic.exe"
                 subprocess.run([str(uic), str(source), "-o", str(target)], check=True)
-            else:  # Linux/Mac - use pyside6-uic or python module
+            else:
                 try:
-                    # Try pyside6-uic command first
                     subprocess.run(["pyside6-uic", str(source), "-o", str(target)], check=True)
                 except FileNotFoundError:
-                    # Fallback to python module
                     subprocess.run([sys.executable, "-m", "PySide6.uic", str(source), "-o", str(target)], check=True)
 
             if disable_centralwidget_set:

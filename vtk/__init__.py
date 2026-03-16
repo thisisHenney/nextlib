@@ -8,12 +8,11 @@ from .core import (
 from .camera import Camera, CADInteractorStyle
 from .tool import AxesTool, RulerTool, PointProbeTool
 
-# 별칭: VtkWidgetBase를 PreprocessWidget으로도 사용 가능
 PreprocessWidget = VtkWidgetBase
 
 __all__ = [
     "VtkWidgetBase",
-    "PreprocessWidget",  # VtkWidgetBase 별칭
+    "PreprocessWidget",
     "PostprocessWidget",
     "SceneTreeWidget",
     "ObjectData",

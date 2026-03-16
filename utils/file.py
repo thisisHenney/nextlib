@@ -6,13 +6,7 @@ from pathlib import Path
 from typing import Sequence
 from nextlib.widgets.messagebox import messagebox_error
 
-# 변수 참고
-# path      : 파일, 디렉토리 둘 다 또는 모호할 때 (ex) "./logs"
-# file_path : (디렉토리가 포함된)파일이름        (ex) "C:/data/config.json"
-# dir_path  : 디렉토리만                      (ex) "C:/data/"
 
-# def to_abs_path(path: Path | str) -> str:   # 프로그램 기준으로 상대경로를 정함
-#     return str(Path(path).expanduser().resolve())
 
 def get_encoding_type(file_name):
     encodings = ['euc-kr', 'utf-8', 'utf-16', 'cp949']
@@ -20,7 +14,7 @@ def get_encoding_type(file_name):
     for e in encodings:
         try:
             with open(file_name, 'r', encoding=e) as f:
-                f.read()    # 실제로 읽는 건 아님
+                f.read()
             encoding_type = e
         except UnicodeDecodeError:
             continue
@@ -65,7 +59,7 @@ def get_file_time(file_path: Path | str, mode='create'):
         get_time = stat.st_atime
     elif mode == 'modify':
         get_time = stat.st_mtime
-    else:  # 'create'
+    else:
         get_time = stat.st_ctime
 
     return datetime.fromtimestamp(get_time)
@@ -75,14 +69,14 @@ def read_file(file_path: Path | str, encoding='utf-8') -> str:
     if not p.is_file():
         return ''
 
-    encoding_type = get_encoding_type(p)    # 다시 확인
+    encoding_type = get_encoding_type(p)
     with p.open('r', encoding=encoding_type) as f:
         return f.read()
 
 def read_file_all_lines(file_path: Path | str) -> list[str]:
     p = Path(file_path)
     if p.is_file():
-        encoding_type = get_encoding_type(p)    # 다시 확인
+        encoding_type = get_encoding_type(p)
         with p.open('r', encoding=encoding_type) as f:
             lines = f.readlines()
         return lines
@@ -95,7 +89,7 @@ def read_file_lines(file_path: Path | str,
     if not p.is_file():
         return []
 
-    encoding_type = get_encoding_type(p)    # 다시 확인
+    encoding_type = get_encoding_type(p)
     lines = p.read_text(encoding=encoding_type).splitlines(keepends=not remove_return_line)
     total = len(lines)
 
@@ -109,7 +103,7 @@ def read_file_lines(file_path: Path | str,
 
 def write_file(file_path: Path | str, data: str) -> bool:
     p = Path(file_path)
-    p.parent.mkdir(parents=True, exist_ok=True)  # 상위 디렉토리 자동 생성
+    p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(data, encoding='utf-8')
     return True
 
@@ -117,7 +111,6 @@ def write_list_file(file_path: Path | str, data: Sequence[str]) -> bool:
     p = Path(file_path)
     p.parent.mkdir(parents=True, exist_ok=True)
 
-    # 각 줄 끝에 개행이 없으면 자동으로 추가
     with p.open('w', encoding='utf-8') as f:
         for line in data:
             if not line.endswith('\n'):
@@ -151,7 +144,6 @@ def get_parent_dir(file_path: Path | str) -> str:
     return str(p.parent if p.is_dir() else p.parent.parent)
 
 def get_file_path(file_path: Path | str, upper: int = 0) -> str:
-    # 상위 경로 반환 (upper=0: 현재 폴더, upper>= 1: 상위 폴더)
     path = Path(file_path).expanduser().resolve()
     if path.is_file():
         path = path.parent
@@ -163,17 +155,17 @@ def get_file_name_ext(file_path: Path | str) -> str:
     return Path(file_path).name
 
 
-def get_file_name(file_path: Path | str) -> str:     # path/name.ext -> name
+def get_file_name(file_path: Path | str) -> str:
     return Path(file_path).stem
 
-def get_file_ext(file_path: Path | str) -> str:     # path/name.ext -> ext
+def get_file_ext(file_path: Path | str) -> str:
     return Path(file_path).suffix.replace('.', '').lower()
 
-def get_drive_name(file_path: Path | str) -> str:   # only for Windows
+def get_drive_name(file_path: Path | str) -> str:
     path = Path(file_path).expanduser().resolve()
     return path.drive
 
-def find_items(path: str | Path = '.', option: str = '*', mode: str = 'all',  # 'file', 'dir', 'all'
+def find_items(path: str | Path = '.', option: str = '*', mode: str = 'all',
                 recursive: bool = True, include_path: bool = True, sorting: bool = True
     ) -> list[str]:
     base = Path(path).expanduser().resolve()
@@ -292,7 +284,6 @@ def copy_or_move_items(src: str | Path, dest: str | Path,
 
 
 def create_web_link_file(filename: str, url: str, path: str | Path = '.') -> Path:
-    # Create a Windows Internet Shortcut (.url) file that links to a web address.
     if not url.lower().startswith(("http://", "https://")):
         raise ValueError("Invalid URL. Must start with 'http://' or 'https://'.")
 
@@ -321,97 +312,7 @@ def get_temp_dir(base_dir: str, prefix: str = "NewTempCase", width: int = 3) -> 
             return str(candidate)
         idx += 1
 
-# ------------------------------------------------------------------------------
-# Extra Functions (사용성이 없어서 주석처리함 함수들
-# ------------------------------------------------------------------------------
-# def is_link(file_name: Path | str) -> bool:
-#     return Path(file_name).is_symlink()
 
-# def get_temporary_path() -> str:
-#     import tempfile
-#     return tempfile.gettempdir()
 
-# ------------------------------------------------------------------------------
-# def find_items 함수와 동일하므로 일단 주석처리함
-# ------------------------------------------------------------------------------
-# def find_dirs(path: str | Path = '.', option: str = '*', recursive: bool = True,
-#     include_path: bool = True, sorting: bool = True) -> list[str]:
-#     base = Path(path).expanduser().resolve()
-#     if recursive:
-#         dirs = [p for p in base.rglob('*') if p.is_dir()]
-#     else:
-#         dirs = [p for p in base.iterdir() if p.is_dir()]
-#
-#     if option == '*' or not option:
-#         found = [str(p) if include_path else p.name for p in dirs]
-#     elif '*' in option or '?' in option:
-#         found = [
-#             str(p) if include_path else p.name
-#             for p in dirs
-#             if fnmatch.fnmatch(p.name.lower(), option.lower())
-#         ]
-#     else:
-#         found = [
-#             str(p) if include_path else p.name
-#             for p in dirs
-#             if option.lower() in p.name.lower()
-#         ]
-#     if sorting:
-#         found.sort()
-#     return found
 
-# def find_files(path: str | Path = '.', option: str = '*', recursive: bool = True,
-#     include_path: bool = True, sorting: bool = True) -> list[str]:
-#     base = Path(path).expanduser().resolve()
-#
-#     if recursive:
-#         files = [p for p in base.rglob('*') if p.is_file()]
-#     else:
-#         files = [p for p in base.iterdir() if p.is_file()]
-#
-#     if option == '*' or not option:
-#         found = [str(p) if include_path else p.name for p in files]
-#     elif '*' in option or '?' in option:
-#         found = [
-#             str(p) if include_path else p.name
-#             for p in files
-#             if fnmatch.fnmatch(p.name.lower(), option.lower())
-#         ]
-#     else:
-#         found = [
-#             str(p) if include_path else p.name
-#             for p in files
-#             if option.lower() in p.name.lower()
-#         ]
-#     if sorting:
-#         found.sort()
-#     return found
 
-# def find_all(path: str | Path = '.', option: str = '*', recursive: bool = True,
-#     include_path: bool = True, sorting: bool = True) -> list[str]:
-#     base = Path(path).expanduser().resolve()
-#
-#     if recursive:
-#         items = [p for p in base.rglob('*')]
-#     else:
-#         items = list(base.iterdir())
-#
-#     if option == '*' or not option:
-#         found = [str(p) if include_path else p.name for p in items]
-#     elif '*' in option or '?' in option:
-#         found = [
-#             str(p) if include_path else p.name
-#             for p in items
-#             if fnmatch.fnmatch(p.name.lower(), option.lower())
-#         ]
-#     else:
-#         found = [
-#             str(p) if include_path else p.name
-#             for p in items
-#             if option.lower() in p.name.lower()
-#         ]
-#
-#     if sorting:
-#         found.sort()
-#     return found
-# ------------------------------------------------------------------------------

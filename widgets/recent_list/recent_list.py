@@ -92,8 +92,8 @@ class RecentList(QWidget):
 
         self.name_list = []
         self.path_list = []
-        self.item_list = []    # list of RecentItemWidget
-        self.widget_list = []  # list of QListWidgetItem
+        self.item_list = []
+        self.widget_list = []
 
         self.selected_index = -1
         self.selected_name = ''

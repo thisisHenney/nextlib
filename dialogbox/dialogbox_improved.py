@@ -21,12 +21,10 @@ logger = logging.getLogger(__name__)
 class DialogBoxConfig:
     """다이얼로그 설정 관리"""
 
-    # 경로 기억 기능
     last_dir_path: Path = Path.home()
     last_file_path: Path = Path.home()
     remember_paths: bool = True
 
-    # 기본 설정
     show_hidden_files: bool = False
     confirm_overwrite: bool = True
 
@@ -54,7 +52,6 @@ class DirDialogBox:
             선택된 폴더 경로 (Path) 또는 None
         """
         try:
-            # 시작 경로 결정
             if path is None and DialogBoxConfig.remember_paths:
                 path = DialogBoxConfig.last_dir_path
             elif path is None:
@@ -62,12 +59,10 @@ class DirDialogBox:
             else:
                 path = Path(path)
 
-            # 경로 검증
             if not path.exists():
                 logger.warning(f"Path does not exist: {path}, using home directory")
                 path = Path.home()
 
-            # getExistingDirectory 사용 (폴더 전용)
             options = QFileDialog.Option.ShowDirsOnly | QFileDialog.Option.DontResolveSymlinks
 
             result = QFileDialog.getExistingDirectory(
@@ -80,7 +75,6 @@ class DirDialogBox:
             if result:
                 result_path = Path(result)
 
-                # 경로 기억
                 if remember_path and DialogBoxConfig.remember_paths:
                     DialogBoxConfig.last_dir_path = result_path
 
@@ -124,7 +118,6 @@ class DirDialogBox:
             if not path.exists():
                 path = Path.home()
 
-            # getExistingDirectory 사용 (폴더 전용)
             result = QFileDialog.getExistingDirectory(
                 parent,
                 title,
@@ -135,7 +128,6 @@ class DirDialogBox:
             if result:
                 result_path = Path(result)
 
-                # 폴더가 없으면 생성
                 if not result_path.exists():
                     result_path.mkdir(parents=True, exist_ok=True)
                     logger.info(f"Created folder: {result_path}")
@@ -186,7 +178,6 @@ class FileDialogBox:
             else:
                 path = Path(path)
 
-            # 파일 경로인 경우 부모 디렉토리 사용
             if path.is_file():
                 path = path.parent
 
@@ -204,12 +195,10 @@ class FileDialogBox:
                 if selected_files:
                     result = Path(selected_files[0])
 
-                    # 파일 존재 확인
                     if not result.exists():
                         logger.warning(f"Selected file does not exist: {result}")
                         return None
 
-                    # 커스텀 검증
                     if validate and not validate(result):
                         logger.warning(f"File validation failed: {result}")
                         if parent:
@@ -220,7 +209,6 @@ class FileDialogBox:
                             )
                         return None
 
-                    # 경로 기억
                     if remember_path and DialogBoxConfig.remember_paths:
                         DialogBoxConfig.last_file_path = result.parent
 
@@ -281,7 +269,6 @@ class FileDialogBox:
                 if selected_files:
                     results = [Path(f) for f in selected_files if Path(f).exists()]
 
-                    # 검증
                     if validate:
                         valid_results = []
                         invalid_count = 0
@@ -302,7 +289,6 @@ class FileDialogBox:
 
                         results = valid_results
 
-                    # 경로 기억
                     if results and remember_path and DialogBoxConfig.remember_paths:
                         DialogBoxConfig.last_file_path = results[0].parent
 
@@ -360,11 +346,9 @@ class FileDialogBox:
             dlg.setNameFilter(filters)
             dlg.setDirectory(str(path))
 
-            # 기본 파일명 설정
             if default_filename:
                 dlg.selectFile(default_filename)
 
-            # 덮어쓰기 확인 설정
             if confirm_overwrite is None:
                 confirm_overwrite = DialogBoxConfig.confirm_overwrite
 
@@ -378,16 +362,13 @@ class FileDialogBox:
                 if selected_files:
                     result = Path(selected_files[0])
 
-                    # 확장자가 없으면 필터에서 추출하여 추가
                     if not result.suffix and filters != "All Files (*)":
-                        # "Text Files (*.txt)" -> ".txt"
                         import re
                         match = re.search(r'\*\.(\w+)', filters)
                         if match:
                             ext = match.group(1)
                             result = result.with_suffix(f'.{ext}')
 
-                    # 경로 기억
                     if remember_path and DialogBoxConfig.remember_paths:
                         DialogBoxConfig.last_file_path = result.parent
 
@@ -401,7 +382,6 @@ class FileDialogBox:
             return None
 
 
-# 편의 함수들
 def select_folder(parent=None, title: str = "Select folder") -> Optional[Path]:
     """빠른 폴더 선택"""
     return DirDialogBox.open_folder(parent, title)
@@ -422,7 +402,6 @@ def save_as(parent=None, title: str = "Save as", filters: str = "All Files (*)",
     return FileDialogBox.save_file(parent, title, filters, default_filename=default_filename)
 
 
-# 자주 사용하는 필터들
 class CommonFilters:
     """자주 사용하는 파일 필터"""
 

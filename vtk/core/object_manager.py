@@ -36,10 +36,9 @@ from .object_accessor import ObjectAccessor, GroupAccessor
 class ObjectManager(QObject):
     """VTK 객체 생명주기 관리자"""
 
-    # 시그널
     selection_changed = Signal(dict)
-    object_added = Signal(int, str)      # id, name
-    object_removed = Signal(int, str)    # id, name
+    object_added = Signal(int, str)
+    object_removed = Signal(int, str)
 
     def __init__(self, renderer: vtkRenderer):
         super().__init__()
@@ -48,23 +47,18 @@ class ObjectManager(QObject):
         self._objects: Dict[int, ObjectData] = {}
         self._next_id = 0
 
-        # 선택 관련
         self._selected_ids: Set[int] = set()
         self._outline_actors: Dict[int, vtkActor] = {}
         self._bbox_actor: Optional[vtkActor] = None
-        self._current_style: str = "surface with edge"  # 현재 뷰 스타일 추적
+        self._current_style: str = "surface with edge"
 
-        # 선택 시각화 옵션
-        self._show_individual_outlines = True  # 개별 객체 outline 표시 여부
+        self._show_individual_outlines = True
 
-        # 피커
         self._picker = None
 
-        # 배치 모드
         self._batch_mode = False
         self._pending_render = False
 
-    # ===== 속성 =====
 
     @property
     def selected_ids(self) -> Set[int]:
@@ -80,11 +74,9 @@ class ObjectManager(QObject):
     def show_individual_outlines(self, value: bool):
         """개별 객체 outline 표시 여부 설정"""
         self._show_individual_outlines = value
-        # 현재 선택이 있으면 시각화 업데이트
         if self._selected_ids:
             self._update_selection_visual()
 
-    # ===== 배치 모드 =====
 
     @contextmanager
     def batch(self):
@@ -106,7 +98,6 @@ class ObjectManager(QObject):
                 self._render()
             self._pending_render = False
 
-    # ===== 체이닝 접근 API =====
 
     def object(self, identifier: Union[int, str]) -> Optional[ObjectAccessor]:
         """ID 또는 이름으로 단일 객체 접근
@@ -146,7 +137,6 @@ class ObjectManager(QObject):
                    if id in self._objects and not self._objects[id].removed]
         return GroupAccessor(self, objects)
 
-    # ===== 기본 CRUD =====
 
     def add(self, actor: vtkActor, name: str = "", group: str = "default") -> int:
         """객체 추가
@@ -168,7 +158,6 @@ class ObjectManager(QObject):
         if not name:
             name = f"object_{obj_id}"
 
-        # 액터의 현재 색상을 읽어 ObjectData에 저장 (MeshLoader가 설정한 색상 보존)
         r, g, b = actor.GetProperty().GetColor()
         actual_color = (int(r * 255), int(g * 255), int(b * 255))
 
@@ -181,12 +170,10 @@ class ObjectManager(QObject):
         )
         self._objects[obj_id] = obj
 
-        # 현재 뷰 스타일 적용 (기본값 대신 현재 선택된 스타일로 시작)
         self._apply_style(obj, self._current_style)
 
         self.renderer.AddActor(actor)
 
-        # 첫 번째 객체면 카메라 리셋
         active_count = sum(1 for o in self._objects.values() if not o.removed)
         if active_count == 1:
             self.renderer.ResetCamera()
@@ -210,7 +197,6 @@ class ObjectManager(QObject):
         obj.removed = True
         self.renderer.RemoveActor(obj.actor)
 
-        # 관련 시각 효과 제거
         self._remove_outline(obj_id)
         self._selected_ids.discard(obj_id)
 
@@ -224,14 +210,12 @@ class ObjectManager(QObject):
             return list(self._objects.values())
         return [o for o in self._objects.values() if not o.removed]
 
-    # ===== 검색 =====
 
     def _find_object(self, identifier: Union[int, str]) -> Optional[ObjectData]:
         """ID 또는 이름으로 객체 찾기"""
         if isinstance(identifier, int):
             return self.get(identifier)
         else:
-            # 이름으로 검색
             for obj in self._objects.values():
                 if obj.name == identifier and not obj.removed:
                     return obj
@@ -249,7 +233,6 @@ class ObjectManager(QObject):
         return [o for o in self._objects.values()
                 if o.group == group and not o.removed]
 
-    # ===== 선택 =====
 
     def select_single(self, obj_id: int):
         """단일 선택"""
@@ -284,7 +267,6 @@ class ObjectManager(QObject):
 
         트리에서 선택이 있지만 VTK 객체와 매칭되지 않을 때 사용
         """
-        # 기존 아웃라인/bbox 제거
         for actor in list(self._outline_actors.values()):
             try:
                 self.renderer.RemoveActor(actor)
@@ -299,7 +281,6 @@ class ObjectManager(QObject):
                 pass
             self._bbox_actor = None
 
-        # 모든 객체를 반투명하게
         for obj in self._objects.values():
             if obj.removed:
                 continue
@@ -308,7 +289,7 @@ class ObjectManager(QObject):
             display_color = self._get_display_color(obj)
 
             prop.SetOpacity(0.12)
-            prop.SetEdgeColor(0.5, 0.5, 0.55)  # Fusion 360 스타일 연한 그레이 엣지
+            prop.SetEdgeColor(0.5, 0.5, 0.55)
             faded_color = tuple(min(1.0, c * 0.3 + 0.7) for c in display_color)
             prop.SetColor(faded_color)
 
@@ -318,7 +299,6 @@ class ObjectManager(QObject):
         """선택된 ID 목록"""
         return list(self._selected_ids)
 
-    # ===== 카메라/포커스 =====
 
     def focus_on(self, obj_id: int):
         """객체에 카메라 포커스"""
@@ -341,7 +321,6 @@ class ObjectManager(QObject):
         self.renderer.ResetCameraClippingRange()
         self._render()
 
-    # ===== 피킹 =====
 
     def set_picking_callback(self, interactor):
         """마우스 피킹 콜백 설정"""
@@ -352,7 +331,6 @@ class ObjectManager(QObject):
             ctrl = interactor.GetControlKey()
             shift = interactor.GetShiftKey()
 
-            # Ctrl 또는 Shift가 눌렸을 때만 선택 처리
             if not (ctrl or shift):
                 return
 
@@ -373,7 +351,6 @@ class ObjectManager(QObject):
                 elif shift:
                     self.add_selection(picked_id)
             else:
-                # 빈 공간 Ctrl/Shift 클릭: 선택 해제
                 self.clear_selection()
 
         def on_double_click(obj, evt):
@@ -389,10 +366,8 @@ class ObjectManager(QObject):
                         break
 
             if picked_id is not None:
-                # 더블클릭: 단일 선택 (포커스 없음)
                 self.select_single(picked_id)
             else:
-                # 빈 공간 더블클릭: 선택 해제
                 self.clear_selection()
 
         def on_key(obj, evt):
@@ -403,14 +378,10 @@ class ObjectManager(QObject):
                 self.clear_selection()
 
         interactor.AddObserver("LeftButtonPressEvent", on_click)
-        # 더블클릭은 CADInteractorStyle에서 처리
         interactor.AddObserver("KeyPressEvent", on_key)
 
-    # ===== 스타일 적용 =====
 
-    # wireframe / surface-with-edge 기본 색상 (스틸 블루 - CAD 표준 스타일)
     _STYLE_COLOR = (0.28, 0.46, 0.70)
-    # 선택 강조 색상 (사이언 - 스틸 블루와 대비가 명확하고 CAD 표준 선택색)
     _SELECT_COLOR = (0.0, 0.82, 0.95)
 
     def _get_display_color(self, obj: ObjectData) -> tuple:
@@ -441,7 +412,7 @@ class ObjectManager(QObject):
         elif style == "surface with edge":
             prop.SetRepresentationToSurface()
             prop.EdgeVisibilityOn()
-            prop.SetEdgeColor(0.12, 0.15, 0.25)  # 다크 네이비 엣지
+            prop.SetEdgeColor(0.12, 0.15, 0.25)
             prop.SetLineWidth(1.2)
             prop.SetColor(self._STYLE_COLOR)
             prop.SetOpacity(1.0)
@@ -459,11 +430,9 @@ class ObjectManager(QObject):
         prop.SetEdgeColor(*self._SELECT_COLOR)
         prop.SetLineWidth(2.5)
 
-    # ===== 선택 시각화 =====
 
     def _update_selection_visual(self):
         """선택 상태 시각화 업데이트"""
-        # 기존 아웃라인 제거
         for actor in list(self._outline_actors.values()):
             try:
                 self.renderer.RemoveActor(actor)
@@ -471,7 +440,6 @@ class ObjectManager(QObject):
                 pass
         self._outline_actors.clear()
 
-        # bbox 제거
         if self._bbox_actor:
             try:
                 self.renderer.RemoveActor(self._bbox_actor)
@@ -479,7 +447,6 @@ class ObjectManager(QObject):
                 pass
             self._bbox_actor = None
 
-        # 선택된 것이 있을 때만 투명도 조절
         if self._selected_ids:
             for obj in self._objects.values():
                 if obj.removed:
@@ -489,37 +456,30 @@ class ObjectManager(QObject):
                 display_color = self._get_display_color(obj)
 
                 if obj.id in self._selected_ids:
-                    # 선택된 객체: 현재 스타일에 맞는 투명도 및 색상 적용
                     if self._current_style in ("transparent", "transparent surface"):
-                        prop.SetOpacity(0.55)  # 비선택(0.12)보다 불투명, 완전 불투명보단 투명
+                        prop.SetOpacity(0.55)
                         prop.SetColor(display_color)
                     elif self._current_style == "wireframe":
                         prop.SetOpacity(1.0)
-                        prop.SetColor(self._SELECT_COLOR)  # 와이어 색으로 선택 강조
+                        prop.SetColor(self._SELECT_COLOR)
                     else:
                         prop.SetOpacity(1.0)
                         prop.SetColor(display_color)
-                    prop.SetEdgeColor(0.12, 0.15, 0.25)  # 다크 네이비 엣지
-                    # 개별 outline 표시 옵션이 켜져 있을 때만 추가
+                    prop.SetEdgeColor(0.12, 0.15, 0.25)
                     if self._show_individual_outlines:
                         self._add_outline(obj)
                 else:
-                    # 선택되지 않은 객체: 반투명 + 연한 그레이 톤
                     prop.SetOpacity(0.12)
-                    prop.SetEdgeColor(0.5, 0.5, 0.55)  # Fusion 360 스타일 연한 그레이 엣지
-                    faded_color = (0.7, 0.72, 0.75)  # 연한 그레이
+                    prop.SetEdgeColor(0.5, 0.5, 0.55)
+                    faded_color = (0.7, 0.72, 0.75)
                     prop.SetColor(faded_color)
 
-            # bbox 표시 비활성화 (선택 시 외곽선 없음)
-            # self._add_selection_bbox()
         else:
-            # 선택이 없으면 모든 객체 현재 스타일로 완전 복원 (Representation 포함)
             for obj in self._objects.values():
                 if obj.removed:
                     continue
                 self._apply_style(obj, self._current_style)
 
-        # 시그널 발신
         info = {
             "selected_ids": list(self._selected_ids),
             "selected_objects": [
@@ -554,7 +514,6 @@ class ObjectManager(QObject):
             o_actor.GetProperty().SetColor(*self._SELECT_COLOR)
             o_actor.GetProperty().SetLineWidth(2.0)
 
-            # 원본 객체의 변환 정보 복사
             o_actor.SetPosition(obj.actor.GetPosition())
             o_actor.SetOrientation(obj.actor.GetOrientation())
             o_actor.SetScale(obj.actor.GetScale())
@@ -597,11 +556,9 @@ class ObjectManager(QObject):
             except:
                 continue
 
-        # 유효한 bounds인지 확인 (inf 값이 남아있으면 선택된 객체 없음)
         if min_x == float("inf") or max_x == float("-inf"):
             return
 
-        # 평면 객체는 바운딩 박스도 평면 유지 (부피를 늘리지 않음)
         cube = vtkCubeSource()
         cube.SetBounds(min_x, max_x, min_y, max_y, min_z, max_z)
         cube.Update()

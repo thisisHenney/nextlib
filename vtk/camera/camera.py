@@ -12,7 +12,7 @@ from .cad_style import CADInteractorStyle
 
 
 class Camera(QObject):
-    view_changed = Signal(str)  # 뷰 변경 시그널
+    view_changed = Signal(str)
 
     def __init__(self, widget):
         """
@@ -36,19 +36,16 @@ class Camera(QObject):
         Args:
             obj_manager: ObjectManager 인스턴스 (더블클릭 선택용)
         """
-        # CAD 스타일 인터랙터 설정
         style = CADInteractorStyle(self, self._renderer, obj_manager)
         self._interactor.SetInteractorStyle(style)
-        self._style = style  # 나중에 obj_manager 설정을 위해 저장
+        self._style = style
 
-        # 초기 카메라 설정 및 저장
         camera = self._renderer.GetActiveCamera()
         camera.SetFocalPoint(0.0, 0.0, 0.0)
         camera.SetPosition(0.0, -4.0, 2.5)
         camera.SetViewUp(0.0, 0.0, 1.0)
         camera.SetClippingRange(0.01, 1000)
 
-        # 홈 뷰를 위한 초기 상태 저장
         self._home_position = (0.0, -4.0, 2.5)
         self._home_focal_point = (0.0, 0.0, 0.0)
         self._home_view_up = (0.0, 0.0, 1.0)
@@ -64,19 +61,16 @@ class Camera(QObject):
         """
         camera = self._renderer.GetActiveCamera()
 
-        # 현재 씬의 바운딩 박스 계산
         bounds = [0] * 6
         self._renderer.ComputeVisiblePropBounds(bounds)
         x_min, x_max, y_min, y_max, z_min, z_max = bounds
 
-        # 중심점 계산
         center = [
             (x_min + x_max) / 2.0,
             (y_min + y_max) / 2.0,
             (z_min + z_max) / 2.0,
         ]
 
-        # 반지름 및 거리 계산
         dx, dy, dz = x_max - x_min, y_max - y_min, z_max - z_min
         radius = (dx**2 + dy**2 + dz**2) ** 0.5 / 2.0
         if radius <= 0:
@@ -86,7 +80,6 @@ class Camera(QObject):
         distance_factor = 3.0
         distance = radius * distance_factor * padding_factor
 
-        # 뷰별 카메라 위치 설정
         view = view.lower()
         if view == "front":
             camera.SetPosition(center[0], center[1] - distance, center[2])
@@ -140,13 +133,18 @@ class Camera(QObject):
         self._renderer.ResetCamera()
         self._render()
 
+    def fit_to_bounds(self, bounds):
+        """지정된 bounds에 맞춰 카메라 리셋 (xmin,xmax,ymin,ymax,zmin,zmax)"""
+        self._renderer.ResetCamera(*bounds)
+        self._renderer.ResetCameraClippingRange()
+        self._render()
+
     def home(self):
         """홈 뷰로 리셋 (초기 카메라 방향 + 씬에 맞춤)"""
         camera = self._renderer.GetActiveCamera()
         camera.SetPosition(*self._home_position)
         camera.SetFocalPoint(*self._home_focal_point)
         camera.SetViewUp(*self._home_view_up)
-        # 씬에 맞춰 카메라 거리 조정
         self._renderer.ResetCamera()
         self._render()
         self.view_changed.emit("home")

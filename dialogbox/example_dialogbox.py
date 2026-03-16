@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 from PySide6.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget, QLabel
 
-# 상대 경로로 import
 from dialogbox_improved import (
     FileDialogBox, DirDialogBox, DialogBoxConfig,
     select_folder, select_file, save_as,
@@ -22,41 +21,34 @@ class DialogBoxDemo(QMainWindow):
         self.setWindowTitle("DialogBox Demo")
         self.setGeometry(100, 100, 400, 500)
 
-        # 중앙 위젯
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
 
-        # 결과 라벨
         self.result_label = QLabel("No selection yet")
         self.result_label.setWordWrap(True)
         layout.addWidget(self.result_label)
 
-        # 설정 버튼들
         self.add_section(layout, "Settings")
         self.add_button(layout, "Toggle Path Memory", self.toggle_path_memory)
         self.add_button(layout, "Toggle Hidden Files", self.toggle_hidden_files)
 
-        # 폴더 선택
         self.add_section(layout, "Folder Selection")
         self.add_button(layout, "Select Folder", self.demo_select_folder)
         self.add_button(layout, "Create Folder", self.demo_create_folder)
         self.add_button(layout, "Select Folder (Quick)", self.demo_quick_folder)
 
-        # 파일 선택
         self.add_section(layout, "File Selection")
         self.add_button(layout, "Open File", self.demo_open_file)
         self.add_button(layout, "Open Files (Multiple)", self.demo_open_files)
         self.add_button(layout, "Open with Validation", self.demo_open_with_validation)
         self.add_button(layout, "Open File (Quick)", self.demo_quick_file)
 
-        # 파일 저장
         self.add_section(layout, "File Save")
         self.add_button(layout, "Save File", self.demo_save_file)
         self.add_button(layout, "Save with Default Name", self.demo_save_with_default)
         self.add_button(layout, "Save As (Quick)", self.demo_quick_save)
 
-        # 필터 예제
         self.add_section(layout, "Filter Examples")
         self.add_button(layout, "Open Image", self.demo_image_filter)
         self.add_button(layout, "Open JSON", self.demo_json_filter)
@@ -65,7 +57,6 @@ class DialogBoxDemo(QMainWindow):
 
         layout.addStretch()
 
-        # 현재 설정 표시
         self.update_settings_display()
 
     def add_section(self, layout, title):
@@ -101,9 +92,6 @@ class DialogBoxDemo(QMainWindow):
             f"Hidden: {'SHOW' if DialogBoxConfig.show_hidden_files else 'HIDE'}"
         )
 
-    # ============================================================
-    # 설정
-    # ============================================================
 
     def toggle_path_memory(self):
         """경로 기억 토글"""
@@ -121,9 +109,6 @@ class DialogBoxDemo(QMainWindow):
             f"Show Hidden Files: {'Enabled' if DialogBoxConfig.show_hidden_files else 'Disabled'}"
         )
 
-    # ============================================================
-    # 폴더 선택
-    # ============================================================
 
     def demo_select_folder(self):
         """폴더 선택 데모"""
@@ -147,9 +132,6 @@ class DialogBoxDemo(QMainWindow):
         result = select_folder(self)
         self.update_result(result)
 
-    # ============================================================
-    # 파일 선택
-    # ============================================================
 
     def demo_open_file(self):
         """파일 열기 데모"""
@@ -188,9 +170,6 @@ class DialogBoxDemo(QMainWindow):
         result = select_file(self, filters=CommonFilters.TEXT)
         self.update_result(result)
 
-    # ============================================================
-    # 파일 저장
-    # ============================================================
 
     def demo_save_file(self):
         """파일 저장 데모"""
@@ -220,9 +199,6 @@ class DialogBoxDemo(QMainWindow):
         )
         self.update_result(result)
 
-    # ============================================================
-    # 필터 예제
-    # ============================================================
 
     def demo_image_filter(self):
         """이미지 필터 데모"""
@@ -265,7 +241,6 @@ def main():
     """메인 함수"""
     app = QApplication(sys.argv)
 
-    # 전역 설정 (선택사항)
     DialogBoxConfig.remember_paths = True
     DialogBoxConfig.confirm_overwrite = True
 

@@ -31,7 +31,7 @@ def convert_to_dock_area(position):
 
 class DockWidget(QObject):
     count = 1
-    visibility_changed = Signal(int, bool)   # number, show_state
+    visibility_changed = Signal(int, bool)
 
     def __init__(self, parent=None, centralwidget=None, layout_file=None):
         super().__init__(parent)
@@ -53,7 +53,6 @@ class DockWidget(QObject):
         self.dock_manager = CDockManager(self.dock_container)
         self.dock_layout.addWidget(self.dock_manager)
 
-        # 독 탭 스타일 적용
         self._apply_tab_style()
 
         self.visibility_changed.emit(0, False)

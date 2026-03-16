@@ -39,7 +39,6 @@ class FoamFile:
         self.utils.rebuild(text)
         return True
 
-    # Get
     def has_key(self, route: str):
         return self.utils.has_key(route)
 
@@ -61,7 +60,6 @@ class FoamFile:
     def get_key_name_list(self, route: str = ''):
         return self.utils.get_key_name_list(route)
 
-    # Set
     def rename(self, route: str, new_name: str):
         self.utils.changedatautil.begin()
         result = self.utils.rename(route, new_name)
@@ -78,7 +76,6 @@ class FoamFile:
             self.reload()
         return result
 
-    # Remove
     def remove(self, route):
         self.utils.changedatautil.begin()
         result = self.utils.remove(route)
@@ -87,7 +84,6 @@ class FoamFile:
             self.reload()
         return result
 
-    # Insert
     def insert_value(self, route: str, value, show_type="auto"):
         self.utils.changedatautil.begin()
         result = self.utils.insert_value(route, value, show_type)

@@ -45,9 +45,7 @@ class SingleInstance(QObject):
         if self._is_running():
             return False
 
-        # 서버 시작 (이 프로세스가 첫 번째 인스턴스)
         self._server = QLocalServer(self)
-        # 이전 비정상 종료로 남은 소켓 파일 제거
         QLocalServer.removeServer(self._app_key)
 
         if not self._server.listen(self._app_key):
@@ -65,7 +63,6 @@ class SingleInstance(QObject):
             return True
         socket.close()
 
-        # 연결 실패했더라도 종료 중인 인스턴스가 있을 수 있으므로 재확인
         import time
         time.sleep(0.15)
 

@@ -1,10 +1,8 @@
-#!/usr/bin/env python3
-# -*- coding:utf8 -*-
 
 from PySide6.QtCore import QThread, Signal
 from NextLib.Network.View.udp_ui import Ui_Form_Udp
 
-SERVER_IP = '0.0.0.0' # Broadcast IP
+SERVER_IP = '0.0.0.0'
 SERVER_PORT = 2368
 
 
@@ -51,7 +49,6 @@ class UdpClientThread(QThread):
                 for listener in self.listeners:
                     listener(*args, **kwargs)
 
-        # 사용 예시
         event = Event()
 
         def handler(msg):
@@ -87,15 +84,10 @@ class UdpClientThread(QThread):
 
     def handle_connection_error(self, error):
         error_messages = {
-            # ConnectionRefusedError: ">> [Error] Server is not running",
-            # socket.gaierror: ">> [Error] Invalid IP address or domain",
-            # socket.timeout: ">> [Error] Server response timeout",
-            # OSError: ">> [Error] Socket error occurred",
         }
         message = error_messages.get(type(error), f">> {error}")
         self.notice.emit(message)
 
-    # for TCP/IP
     def disconnect_from_server(self):
         self._running = False
         if self.client:
@@ -105,7 +97,6 @@ class UdpClientThread(QThread):
                 pass
         self.client = None
 
-    # for TCP/IP
     def send_message(self, msg):
         if self.is_connected() and msg:
             try:

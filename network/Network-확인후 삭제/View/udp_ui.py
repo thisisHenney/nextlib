@@ -1,12 +1,4 @@
-# -*- coding: utf-8 -*-
 
-################################################################################
-## Form generated from reading UI file 'udp.ui'
-##
-## Created by: Qt User Interface Compiler version 6.9.0
-##
-## WARNING! All changes made in this file will be lost when recompiling UI file!
-################################################################################
 
 from PySide6.QtCore import (QCoreApplication, QDate, QDateTime, QLocale,
     QMetaObject, QObject, QPoint, QRect,
@@ -262,7 +254,6 @@ class Ui_Form_Udp(object):
 
 
         QMetaObject.connectSlotsByName(Form_Udp)
-    # setupUi
 
     def retranslateUi(self, Form_Udp):
         Form_Udp.setWindowTitle(QCoreApplication.translate("Form_Udp", u"Form", None))
@@ -292,5 +283,4 @@ class Ui_Form_Udp(object):
         self.received_message_edit.setPlaceholderText("")
         self.send_message_edit.setPlaceholderText(QCoreApplication.translate("Form_Udp", u"Type send message here", None))
         self.send_button.setText(QCoreApplication.translate("Form_Udp", u"Send", None))
-    # retranslateUi
 

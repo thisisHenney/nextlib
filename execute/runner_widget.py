@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding:utf8 -*-
-# !/bin/bash
 
 import time
 
@@ -48,8 +45,8 @@ class Task(QRunnable):
             num = len(self._run_functions)
             for i in range(num):
                 self._completed_task_num = i
-                self.signals.current.emit(i)  # Refer: this signal is maybe too late
-                self._run_functions[i]()    # self._run_functions.pop(0)()
+                self.signals.current.emit(i)
+                self._run_functions[i]()
                 self.signals.updating.emit()
 
         except Exception as e:
@@ -103,7 +100,6 @@ class Runner(QDialog):
         self.setWindowTitle(title)
 
     def add_task(self, function, *args):
-        # Warning: Do not append thread function
         self._task_functions.append(create_func_args(function, *args))
 
     def start(self):

@@ -57,13 +57,11 @@ def restore_window_geometry(window, geometry: dict) -> None:
         center_on_screen(window)
         return
 
-    # 크기 복원
     w = geometry.get("width", 0)
     h = geometry.get("height", 0)
     if w > 0 and h > 0:
         window.resize(w, h)
 
-    # 위치 복원
     x = geometry.get("x", -1)
     y = geometry.get("y", -1)
 
@@ -75,7 +73,6 @@ def restore_window_geometry(window, geometry: dict) -> None:
     else:
         center_on_screen(window)
 
-    # 최대화 상태 복원
     if geometry.get("maximized", False):
         window.showMaximized()
 

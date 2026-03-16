@@ -19,7 +19,6 @@ import math
 
 def _get_openfoam_reader():
     """vtkOpenFOAMReader를 가져옵니다. vtk 또는 vtkmodules에서 시도합니다."""
-    # 방법 1: vtk 패키지에서 직접 import
     try:
         import vtk
         if hasattr(vtk, 'vtkOpenFOAMReader'):
@@ -27,7 +26,6 @@ def _get_openfoam_reader():
     except ImportError:
         pass
 
-    # 방법 2: vtkmodules에서 import
     try:
         from vtkmodules.vtkIOOpenFOAM import vtkOpenFOAMReader
         return vtkOpenFOAMReader
@@ -49,7 +47,6 @@ class OpenFOAMReader:
         self._case_path: Optional[Path] = None
         self._foam_file: Optional[Path] = None
 
-        # 캐시된 데이터
         self._surface_polydata = None
         self._bounds: Optional[Tuple[float, ...]] = None
         self._center: Optional[Tuple[float, float, float]] = None
@@ -74,15 +71,12 @@ class OpenFOAMReader:
         if not path.is_dir():
             return False
 
-        # .foam 파일 존재
         if list(path.glob("*.foam")) or list(path.glob("*.OpenFOAM")):
             return True
 
-        # constant/polyMesh 폴더 존재
         if (path / "constant" / "polyMesh").is_dir():
             return True
 
-        # constant와 system 폴더 존재
         if (path / "constant").is_dir() and (path / "system").is_dir():
             return True
 
@@ -99,22 +93,18 @@ class OpenFOAMReader:
         """
         path = Path(case_path)
 
-        # .foam 파일인지 폴더인지 확인
         if path.suffix.lower() in ('.foam', '.openfoam'):
             self._foam_file = path
             self._case_path = path.parent
         elif path.is_dir():
-            # OpenFOAM 케이스 폴더인지 검증
             if not self.is_openfoam_case(path):
                 return False
 
             self._case_path = path
-            # .foam 파일 찾기 또는 생성
             foam_files = list(path.glob("*.foam")) + list(path.glob("*.OpenFOAM"))
             if foam_files:
                 self._foam_file = foam_files[0]
             else:
-                # case.foam 파일 생성
                 self._foam_file = path / "case.foam"
                 try:
                     self._foam_file.touch()
@@ -123,7 +113,6 @@ class OpenFOAMReader:
         else:
             return False
 
-        # vtkOpenFOAMReader 가져오기
         ReaderClass = _get_openfoam_reader()
         if ReaderClass is None:
             return False
@@ -132,7 +121,6 @@ class OpenFOAMReader:
             reader = ReaderClass()
             reader.SetFileName(str(self._foam_file))
 
-            # 옵션 설정
             if hasattr(reader, 'SetCreateCellToPointOn'):
                 reader.SetCreateCellToPointOn()
             elif hasattr(reader, 'SetCreateCellToPoint'):
@@ -146,10 +134,8 @@ class OpenFOAMReader:
             if hasattr(reader, 'CacheMeshOn'):
                 reader.CacheMeshOn()
 
-            # 1차 Update: 배열 목록 및 타임스텝 정보 확보
             reader.Update()
 
-            # 모든 배열 활성화
             if hasattr(reader, 'EnableAllCellArrays'):
                 reader.EnableAllCellArrays()
             if hasattr(reader, 'EnableAllPointArrays'):
@@ -161,10 +147,8 @@ class OpenFOAMReader:
 
             self._reader = reader
 
-            # 타임스텝 정보 추출 (1차 Update 이후 사용 가능)
             self._extract_time_values()
 
-            # 마지막 타임스텝으로 시간 설정 (Update 전에 미리 설정하여 Update 횟수 절감)
             if self._time_values:
                 last_time = self._time_values[-1]
                 try:
@@ -175,13 +159,10 @@ class OpenFOAMReader:
                     if hasattr(reader, 'SetTimeValue'):
                         reader.SetTimeValue(last_time)
 
-            # 2차 Update: 모든 배열 + 마지막 타임스텝 데이터 로드 (2nd+3rd 통합)
             reader.Update()
 
-            # 필드 이름 추출
             self._extract_field_names()
 
-            # Surface polydata는 메인 스레드에서만 생성 (VTK 스레드 안전성)
             if build_surface:
                 self._create_surface()
 
@@ -191,7 +172,6 @@ class OpenFOAMReader:
             return False
 
         finally:
-            # bounds 계산은 실패해도 load 성공에 영향 없음
             try:
                 if self._reader is not None:
                     self._compute_bounds_fast()
@@ -225,7 +205,6 @@ class OpenFOAMReader:
             """재귀적으로 모든 leaf 데이터셋에서 필드 이름 수집."""
             if data_obj is None:
                 return
-            # Leaf 데이터셋: PointData / CellData 직접 접근
             if hasattr(data_obj, 'GetPointData') and hasattr(data_obj, 'GetCellData'):
                 pd = data_obj.GetPointData()
                 cd = data_obj.GetCellData()
@@ -237,7 +216,6 @@ class OpenFOAMReader:
                     name = cd.GetArrayName(i)
                     if name:
                         fields.add(name)
-            # CompositeDataSet: 하위 블록 재귀 순회
             if hasattr(data_obj, 'GetNumberOfBlocks'):
                 for i in range(data_obj.GetNumberOfBlocks()):
                     child = data_obj.GetBlock(i)
@@ -266,7 +244,6 @@ class OpenFOAMReader:
                 for i in range(obj.GetNumberOfBlocks()):
                     _visit(obj.GetBlock(i))
                 return
-            # 리프 노드에서만 GetBounds 호출 (복합 데이터셋은 건너뜀)
             if (hasattr(obj, 'GetBounds') and hasattr(obj, 'GetNumberOfPoints')
                     and obj.GetNumberOfPoints() > 0):
                 try:
@@ -302,14 +279,12 @@ class OpenFOAMReader:
         except ImportError:
             return
 
-        # MultiBlock → PolyData 변환
         geom = vtk.vtkCompositeDataGeometryFilter()
         geom.SetInputConnection(self._reader.GetOutputPort())
         geom.Update()
 
         self._surface_polydata = geom.GetOutput()
 
-        # bounds 계산
         if self._surface_polydata:
             b = self._surface_polydata.GetBounds()
             self._bounds = b
@@ -350,7 +325,6 @@ class OpenFOAMReader:
 
         self._reader.Update()
 
-    # ===== 데이터 접근 =====
 
     def get_reader(self):
         """VTK 리더 객체를 반환합니다."""
@@ -384,7 +358,6 @@ class OpenFOAMReader:
         """케이스 경로를 반환합니다."""
         return self._case_path
 
-    # ===== 필드 데이터 =====
 
     def get_field_dataset(self, field_name: str):
         """특정 필드를 포함하는 통합 데이터셋을 반환합니다."""
@@ -444,37 +417,29 @@ class OpenFOAMReader:
         except ImportError:
             return None
 
-        # 평면 생성
         plane = vtk.vtkPlane()
         plane.SetOrigin(*origin)
         plane.SetNormal(*normal)
 
-        # ParaView 스타일 파이프라인
-        # 1. MultiBlock → PolyData
         geom_all = vtk.vtkCompositeDataGeometryFilter()
         geom_all.SetInputConnection(self._reader.GetOutputPort())
         geom_all.Update()
 
-        # 2. Cell → Point interpolation
         cd2pd = vtk.vtkCellDataToPointData()
         cd2pd.SetInputConnection(geom_all.GetOutputPort())
         cd2pd.Update()
 
-        # 3. Clean polydata
         clean1 = vtk.vtkCleanPolyData()
         clean1.SetInputConnection(cd2pd.GetOutputPort())
 
-        # 4. Slice
         cutter = vtk.vtkCutter()
         cutter.SetCutFunction(plane)
         cutter.SetInputConnection(clean1.GetOutputPort())
         cutter.Update()
 
-        # 5. Clean slice result
         clean2 = vtk.vtkCleanPolyData()
         clean2.SetInputConnection(cutter.GetOutputPort())
 
-        # 6. Triangulate
         tri = vtk.vtkTriangleFilter()
         tri.SetInputConnection(clean2.GetOutputPort())
         tri.Update()

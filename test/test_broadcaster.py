@@ -7,7 +7,6 @@ class TestBroadCaster(unittest.TestCase):
         self.broadcaster = broadcaster
 
     def test_01_value(self):
-        # self.broadcaster = broadcaster
         self.broadcaster.value.connect(self._on_received_value)
         self.broadcaster.value.emit(999)
         self.broadcaster.value.emit({'Dict':'test1'})
@@ -24,6 +23,5 @@ class TestBroadCaster(unittest.TestCase):
         print(msg)
 
 
-# Test
 if __name__ == '__main__':
     unittest.main()

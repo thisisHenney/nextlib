@@ -34,7 +34,6 @@ class ObjectAccessor:
     def actor(self):
         return self._obj.actor
 
-    # ===== 체이닝 메서드 =====
 
     def show(self) -> "ObjectAccessor":
         """객체 표시"""
@@ -109,12 +108,10 @@ class ObjectAccessor:
         if enable:
             self._manager._effect_highlight(self._obj)
         else:
-            # 기본 스타일로 복원
             self._manager._apply_style(self._obj, self._obj.view_style)
         self._manager._render()
         return self
 
-    # ===== 정보 조회 (체이닝 아님) =====
 
     def get_bounds(self) -> Tuple[float, float, float, float, float, float]:
         """바운딩 박스 반환 (xmin, xmax, ymin, ymax, zmin, zmax)"""
@@ -156,7 +153,6 @@ class GroupAccessor:
         """각 객체의 ObjectAccessor 리스트 반환"""
         return [ObjectAccessor(self._manager, obj) for obj in self._objects]
 
-    # ===== 체이닝 메서드 (모든 객체에 적용) =====
 
     def show(self) -> "GroupAccessor":
         """모든 객체 표시"""

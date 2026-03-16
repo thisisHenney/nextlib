@@ -2,8 +2,6 @@ from pathlib import Path
 from PySide6.QtWidgets import QFileDialog
 from PySide6.QtCore import Qt
 
-# Filter Option
-# (ex) ext: "CAD Files (*.stp *.step);;STL Files (*.stl);;All Files (*)"
 
 class DirDialogBox:
     @staticmethod

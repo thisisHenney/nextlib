@@ -26,7 +26,7 @@ class DockManager(QObject):
         self._parent = parent
 
         self._manager = CDockManager(parent)
-        self._docks = [None]    # 0:Cental dock, 1~:Side Docks
+        self._docks = [None]
 
         self._bind_events()
 
@@ -88,11 +88,11 @@ class DockManager(QObject):
             area = DockWidgetArea.BottomDockWidgetArea
         elif position == 'Top':
             area = DockWidgetArea.TopDockWidgetArea
-        else:   # position == 'Right': # Default
+        else:
             area = DockWidgetArea.RightDockWidgetArea
         return area
 
-    def set_margins(self, number, margins=(0, 0, 0, 0)):   # (left, top, right, bottom)
+    def set_margins(self, number, margins=(0, 0, 0, 0)):
         self._docks[number].setContentsMargins(*margins)
 
     def get_title(self, number):
@@ -103,17 +103,14 @@ class DockManager(QObject):
 
     def show(self, number):
         dock_widget = self._docks[number]
-        # dock_widget.toggleView(True)
         self.shown.emit(number)
 
     def hide(self, number):
         dock_widget = self._dock_widgets[number]
-        # dock_widget.setVisible(False)
         self.hidden.emit(number)
 
     def close(self, dock):
         dock_widget = self._dock_widgets[dock]
-        # dock_widget.deleteDockWidget()
         dock_widget.toggleView(False)
         self.closed.emit(dock)
 

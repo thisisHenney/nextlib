@@ -216,20 +216,6 @@ class FoamLivePlotWidget(QWidget):
         style = self.styles[(index // len(self.colors)) % len(self.styles)]
         return pg.mkPen(color=color, width=2, style=style)
 
-    # def _on_file_waiting(self):
-    #     print("[Info] Waiting for log file...")
-    #
-    # def _on_file_detected(self, path):
-    #     print(f"[Info] Log file detected: {path}")
-    #
-    # def _on_started_plotting(self):
-    #     print("[Info] Live plotting started.")
-    #
-    # def _on_stalled(self):
-    #     print("[Warning] Plot stalled (no updates).")
-    #
-    # def _on_stopped(self):
-    #     print("[Info] Watcher stopped.")
 
     def update_graph(self, data: dict):
         time_list = data["time"]

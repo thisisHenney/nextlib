@@ -1,6 +1,5 @@
-# 기본적인 Singleton 클래스 선언
 class Singleton:
-    _instance = None  # 클래스 변수로 인스턴스 저장
+    _instance = None
 
     def __new__(cls):
         if cls._instance is None:
@@ -12,7 +11,6 @@ class Singleton:
             self._initialized = True
 
 
-# 인스턴스 변수를 동적으로 추가하거나 삭제할 수 있는 클래스
 class Singleton:
     _instance = None
 
@@ -32,12 +30,11 @@ class Singleton:
         if hasattr(self, name):
             delattr(self, name)
 
-# Run
 a = Singleton()
 a.add_value('temp', 42)
-print(a.temp)  # 42
+print(a.temp)
 
 a.remove_value('temp')
-print(hasattr(a, 'temp'))  # False
+print(hasattr(a, 'temp'))
 
 

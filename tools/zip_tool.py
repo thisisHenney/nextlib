@@ -52,7 +52,7 @@ class ZipTool:
     def zip_selected(
         folder: Path | str,
         zip_path: Path | str,
-        extensions: Iterable[str],  # ex) extensions=[".json", ".csv"]
+        extensions: Iterable[str],
         compress_level: int = 6
     ) -> Path:
         folder = Path(folder)

@@ -19,7 +19,7 @@ def get_time(msec: bool = True, show_split: bool = False) -> str:
         return now.strftime("%H%M%S")
 
     if show_split:
-        return now.strftime("%H:%M:%S.%f")[:9]  # HH:MM:SS.mmm
+        return now.strftime("%H:%M:%S.%f")[:9]
     else:
         return now.strftime("%H:%M:%S.%f")
 

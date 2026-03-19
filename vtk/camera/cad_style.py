@@ -11,6 +11,8 @@ CAD 스타일 마우스 인터랙션
 import time
 import vtk
 from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
 
 
 class CADInteractorStyle(vtkInteractorStyleTrackballCamera):
@@ -102,6 +104,12 @@ class CADInteractorStyle(vtkInteractorStyleTrackballCamera):
         self._sync_camera()
 
     def _on_mouse_move(self, obj, event):
+        buttons = QApplication.mouseButtons()
+        no_button = not bool(buttons & (Qt.MouseButton.LeftButton | Qt.MouseButton.MiddleButton | Qt.MouseButton.RightButton))
+        if no_button and (self._is_rotating or self._is_panning or self._ctrl_pressed):
+            self.reset_state()
+            return
+
         if self._is_rotating or self._is_panning or self._ctrl_pressed:
             self.OnMouseMove()
             self._sync_camera()

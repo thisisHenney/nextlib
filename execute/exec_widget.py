@@ -505,12 +505,21 @@ class ExecWidget(QWidget):
             if current_view < 0:
                 return
 
-            chunks = self._output_buffer.get(current_view, [])
+            self._flush_output_buffer_for(current_view)
+        except BaseException:
+            pass
+
+    def _flush_output_buffer_for(self, proc_idx):
+        try:
+            if not self._output_view:
+                return
+
+            chunks = self._output_buffer.get(proc_idx, [])
             if not chunks:
                 return
 
             text = ''.join(chunks)
-            self._output_buffer[current_view] = []
+            self._output_buffer[proc_idx] = []
 
             if not text:
                 return
@@ -747,6 +756,13 @@ class ExecWidget(QWidget):
 
         proc = self._procs[proc_idx]
         if proc is not None:
+            try:
+                remaining = bytes(proc.readAllStandardOutput()).decode('utf-8', errors='replace')
+                if remaining:
+                    self.add_message_output(remaining, proc_idx)
+            except (RuntimeError, AttributeError):
+                pass
+            self._flush_output_buffer_for(proc_idx)
             try:
                 proc.readyReadStandardOutput.disconnect()
                 proc.readyReadStandardError.disconnect()

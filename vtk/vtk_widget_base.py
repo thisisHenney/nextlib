@@ -38,6 +38,7 @@ class VtkWidgetBase(QMainWindow):
     """VTK 위젯 베이스 클래스 (QMainWindow 기반 - QToolBar 플로팅/도킹 지원)"""
 
     selection_changed = Signal(dict)
+    escape_pressed = Signal()
 
     def __init__(self, parent: QWidget = None, registry=None):
         """
@@ -1505,6 +1506,10 @@ class VtkWidgetBase(QMainWindow):
         if obj is self.vtk_widget:
             if event.type() in (QEvent.Type.Leave, QEvent.Type.FocusOut):
                 self._release_vtk_buttons()
+            elif event.type() == QEvent.Type.KeyPress:
+                if event.key() == Qt.Key.Key_Escape:
+                    self._release_vtk_buttons()
+                    self.escape_pressed.emit()
         return super().eventFilter(obj, event)
 
     def _release_vtk_buttons(self):

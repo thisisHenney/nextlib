@@ -181,5 +181,5 @@ class Camera(QObject):
             rw = self._renderer.GetRenderWindow()
             if rw:
                 rw.Render()
-        except:
+        except Exception:
             pass

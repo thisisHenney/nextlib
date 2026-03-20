@@ -70,7 +70,6 @@ def get_process_info(pid: int=-1) -> dict:
                 "create_time": p.create_time(),
                 "num_threads": p.num_threads(),
             }
-            return info
     except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
         return {}
 

@@ -156,7 +156,7 @@ class ExecWidget(QWidget):
         return self._ui.comboBox_output_proc_index.currentIndex()
 
     def set_current_view(self, index=0):
-        if index <= len(self._all_msgs):
+        if index < len(self._all_msgs):
             self._ui.comboBox_output_proc_index.setCurrentIndex(index)
 
     def get_procs(self):
@@ -506,7 +506,7 @@ class ExecWidget(QWidget):
                 return
 
             self._flush_output_buffer_for(current_view)
-        except BaseException:
+        except Exception:
             pass
 
     def _flush_output_buffer_for(self, proc_idx):
@@ -530,7 +530,7 @@ class ExecWidget(QWidget):
             if self._is_tracking:
                 scrollbar = self._output_view.verticalScrollBar()
                 scrollbar.setValue(scrollbar.maximum())
-        except BaseException:
+        except Exception:
             pass
 
     def set_text(self, text='', index=0):

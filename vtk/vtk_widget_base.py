@@ -196,8 +196,8 @@ class VtkWidgetBase(QMainWindow):
 
         self.toolbar.addSeparator()
 
-        self._add_action("Select All", "select_all.png", self._on_select_all)
-        self._add_action("Deselect", "deselect.png", self._on_clear_selection)
+        self._action_select_all = self._add_action("Select All", "select_all.png", self._on_select_all)
+        self._action_deselect = self._add_action("Deselect", "deselect.png", self._on_clear_selection)
 
         self.toolbar.addSeparator()
 
@@ -492,7 +492,7 @@ class VtkWidgetBase(QMainWindow):
                 max_y = max(max_y, bounds[3])
                 min_z = min(min_z, bounds[4])
                 max_z = max(max_z, bounds[5])
-            except:
+            except Exception:
                 continue
 
         if min_x == float("inf"):
@@ -557,7 +557,7 @@ class VtkWidgetBase(QMainWindow):
                     if obj.id in self._clip_actors:
                         try:
                             self.renderer.RemoveActor(self._clip_actors[obj.id])
-                        except:
+                        except Exception:
                             pass
                         del self._clip_actors[obj.id]
                     continue
@@ -634,7 +634,7 @@ class VtkWidgetBase(QMainWindow):
         for obj_id, actor in self._clip_actors.items():
             try:
                 self.renderer.RemoveActor(actor)
-            except:
+            except Exception:
                 pass
         self._clip_actors.clear()
         self._clip_plane = None
@@ -705,7 +705,7 @@ class VtkWidgetBase(QMainWindow):
         if self._clip_preview_actor:
             try:
                 self.renderer.RemoveActor(self._clip_preview_actor)
-            except:
+            except Exception:
                 pass
             self._clip_preview_actor = None
 
@@ -982,7 +982,7 @@ class VtkWidgetBase(QMainWindow):
                 else:
                     try:
                         self.renderer.RemoveActor(clip_actor)
-                    except:
+                    except Exception:
                         pass
                     del self._clip_actors[obj_id]
         self.render()
@@ -1053,7 +1053,7 @@ class VtkWidgetBase(QMainWindow):
                 min_z = min(min_z, bounds[4])
                 max_z = max(max_z, bounds[5])
                 has_objects = True
-            except:
+            except Exception:
                 continue
 
         if not has_objects or min_x == float("inf"):
@@ -1124,7 +1124,7 @@ class VtkWidgetBase(QMainWindow):
         if self._ground_plane_actor:
             try:
                 self.renderer.RemoveActor(self._ground_plane_actor)
-            except:
+            except Exception:
                 pass
             self._ground_plane_actor = None
             self.render()

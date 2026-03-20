@@ -11,7 +11,7 @@ def open_file_explorer(parent: None = None, path: str | None = None):
     path = check_path(path)
 
     if system == 'Windows':
-        subprocess.Popen(['explorer', (Path(path).resolve())])
+        subprocess.Popen(['explorer', str(Path(path).resolve())])
     elif system == 'Linux':
         try:
             subprocess.Popen(['xdg-open', path])

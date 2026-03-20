@@ -1,100 +1,25 @@
-from pathlib import Path
-from PySide6.QtWidgets import QFileDialog
-from PySide6.QtCore import Qt
+"""
+Backward-compatible wrapper.
+Use dialogbox_improved_v2 directly for new code.
+"""
+from nextlib.dialogbox.dialogbox_improved_v2 import (
+    DialogBoxConfig,
+    DirDialogBox,
+    FileDialogBox,
+    CommonFilters,
+    select_folder,
+    select_file,
+    select_files,
+    save_as,
+)
 
-
-class DirDialogBox:
-    @staticmethod
-    def open_folder(parent=None, title="Select folder",
-                    path: str | Path | None = None) -> str | None:
-        if path is None:
-            path = Path.home()
-
-        dlg = QFileDialog(parent)
-        dlg.setWindowTitle(title)
-        dlg.setFileMode(QFileDialog.Directory)
-        dlg.setOption(QFileDialog.ShowDirsOnly, True)
-        dlg.setOption(QFileDialog.DontUseNativeDialog, True)
-        dlg.setDirectory(str(path))
-        dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
-
-        if dlg.exec():
-            return dlg.selectedFiles()[0]
-        return None
-
-    @staticmethod
-    def create_folder(parent=None, title="Create folder",
-                      path: str | Path | None = None) -> str | None:
-        if path is None:
-            path = Path.home()
-
-        dlg = QFileDialog(parent)
-        dlg.setWindowTitle(title)
-        dlg.setFileMode(QFileDialog.Directory)
-        dlg.setAcceptMode(QFileDialog.AcceptSave)
-        dlg.setOption(QFileDialog.ShowDirsOnly, True)
-        dlg.setOption(QFileDialog.DontUseNativeDialog, True)
-        dlg.setDirectory(str(path))
-        dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
-
-        if dlg.exec():
-            return dlg.selectedFiles()[0]
-        return None
-
-
-class FileDialogBox:
-    @staticmethod
-    def open_file(parent=None, title="Open file",
-                  filters="All Files (*)",
-                  path: str | Path | None = None) -> str | None:
-        if path is None:
-            path = Path.home()
-
-        dlg = QFileDialog(parent)
-        dlg.setWindowTitle(title)
-        dlg.setNameFilter(filters)
-        dlg.setFileMode(QFileDialog.ExistingFile)
-        dlg.setOption(QFileDialog.DontUseNativeDialog, True)
-        dlg.setDirectory(str(path))
-        dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
-
-        if dlg.exec():
-            return dlg.selectedFiles()[0]
-        return None
-
-    @staticmethod
-    def open_files(parent=None, title="Open files",
-                   filters="All Files (*)", path: str | Path | None = None) -> list[Path]:
-        if path is None:
-            path = Path.home()
-
-        dlg = QFileDialog(parent)
-        dlg.setWindowTitle(title)
-        dlg.setNameFilter(filters)
-        dlg.setFileMode(QFileDialog.ExistingFiles)
-        dlg.setOption(QFileDialog.DontUseNativeDialog, True)
-        dlg.setDirectory(str(path))
-        dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
-
-        if dlg.exec():
-            return [p for p in dlg.selectedFiles()]
-        return []
-
-    @staticmethod
-    def save_file(parent=None, title="Save file",
-                  filters="All Files (*)",
-                  path: str | Path | None = None) -> str | None:
-        if path is None:
-            path = Path.home()
-
-        dlg = QFileDialog(parent)
-        dlg.setWindowTitle(title)
-        dlg.setAcceptMode(QFileDialog.AcceptSave)
-        dlg.setNameFilter(filters)
-        dlg.setOption(QFileDialog.DontUseNativeDialog, True)
-        dlg.setDirectory(str(path))
-        dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
-
-        if dlg.exec():
-            return dlg.selectedFiles()[0]
-        return None
+__all__ = [
+    "DialogBoxConfig",
+    "DirDialogBox",
+    "FileDialogBox",
+    "CommonFilters",
+    "select_folder",
+    "select_file",
+    "select_files",
+    "save_as",
+]

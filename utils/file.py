@@ -4,7 +4,6 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Sequence
-from nextlib.widgets.messagebox import messagebox_error
 
 
 
@@ -46,7 +45,7 @@ def is_dir(dir_path: Path | str) -> bool:
     return Path(dir_path).is_dir()
 
 def is_dir_empty(dir_path: Path | str) -> bool:
-    return not find_all(dir_path)
+    return not find_items(dir_path)
 
 def get_file_size(file_path: Path | str) -> int:
     return Path(file_path).stat().st_size
@@ -65,7 +64,7 @@ def get_file_time(file_path: Path | str, mode='create'):
     return datetime.fromtimestamp(get_time)
 
 def read_file(file_path: Path | str, encoding='utf-8') -> str:
-    p = Path(file_name)
+    p = Path(file_path)
     if not p.is_file():
         return ''
 

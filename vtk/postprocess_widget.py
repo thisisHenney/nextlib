@@ -1154,7 +1154,7 @@ class PostprocessWidget(QMainWindow):
             rw = self.renderer.GetRenderWindow()
             if rw:
                 rw.Render()
-        except:
+        except Exception:
             pass
 
 

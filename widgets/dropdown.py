@@ -19,7 +19,7 @@ _BTN_OPEN = (
     "  border-bottom-left-radius: 0px;"
     "  border-bottom-right-radius: 0px;"
     "  border-bottom: 1px solid #9ab0c8;"
-    "  padding: 2px 10px;"
+    "  padding: 2px 10px 2px 5px;"
     "  text-align: left;"
     "  font-size: 9pt;"
     "  font-weight: bold;"
@@ -33,7 +33,7 @@ _BTN_CLOSED = (
     "  background: #f0f0f0;"
     "  border: none;"
     "  border-radius: 5px;"
-    "  padding: 2px 10px;"
+    "  padding: 2px 10px 2px 5px;"
     "  text-align: left;"
     "  font-size: 9pt;"
     "  font-weight: bold;"
@@ -105,7 +105,7 @@ class DropDownItemWidget(QWidget):
             self._content_wrap.setObjectName("contentWrap")
             self._content_wrap.setStyleSheet("#contentWrap { border: none; background: transparent; }")
             _wrap_layout = QVBoxLayout(self._content_wrap)
-            _wrap_layout.setContentsMargins(10, 8, 10, 12)
+            _wrap_layout.setContentsMargins(4, 6, 4, 8)
             _wrap_layout.setSpacing(0)
             _wrap_layout.addWidget(self.sub_widget)
 

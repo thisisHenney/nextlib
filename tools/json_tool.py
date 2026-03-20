@@ -28,7 +28,7 @@ class JsonTool:
             print(f"[!!] File not found: {self._file}")
             return False
 
-        encoding_type = get_encoding_type(self.path)
+        encoding_type = get_encoding_type(path)
         text = path.read_text(encoding=encoding_type)
 
         check = self.check_json_error(text)

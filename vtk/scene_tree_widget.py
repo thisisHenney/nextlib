@@ -120,7 +120,7 @@ class SceneTreeWidget(QFrame):
                 self._obj_manager.object_added.disconnect(self._on_object_added)
                 self._obj_manager.object_removed.disconnect(self._on_object_removed)
                 self._obj_manager.selection_changed.disconnect(self._on_vtk_selection_changed)
-            except:
+            except Exception:
                 pass
 
         self._obj_manager = obj_manager

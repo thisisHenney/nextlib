@@ -8,7 +8,7 @@ def seconds_to_time(seconds: int) -> tuple[int, int, int, int]:
     days, remainder = divmod(seconds, 86400)
     hours, remainder = divmod(remainder, 3600)
     minutes, secs = divmod(remainder, 60)
-    return hours, minutes, secs
+    return days, hours, minutes, secs
 
 def get_date() -> str:
     return datetime.now().strftime("%Y-%m-%d")

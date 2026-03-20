@@ -270,14 +270,14 @@ class ObjectManager(QObject):
         for actor in list(self._outline_actors.values()):
             try:
                 self.renderer.RemoveActor(actor)
-            except:
+            except Exception:
                 pass
         self._outline_actors.clear()
 
         if self._bbox_actor:
             try:
                 self.renderer.RemoveActor(self._bbox_actor)
-            except:
+            except Exception:
                 pass
             self._bbox_actor = None
 
@@ -394,6 +394,8 @@ class ObjectManager(QObject):
         """객체에 뷰 스타일 적용"""
         style = style.lower()
         self._current_style = style
+        if not hasattr(obj.actor, 'GetProperty'):
+            return
         prop = obj.actor.GetProperty()
         orig_color = tuple(c / 255.0 for c in obj.color)
 
@@ -436,14 +438,14 @@ class ObjectManager(QObject):
         for actor in list(self._outline_actors.values()):
             try:
                 self.renderer.RemoveActor(actor)
-            except:
+            except Exception:
                 pass
         self._outline_actors.clear()
 
         if self._bbox_actor:
             try:
                 self.renderer.RemoveActor(self._bbox_actor)
-            except:
+            except Exception:
                 pass
             self._bbox_actor = None
 
@@ -531,7 +533,7 @@ class ObjectManager(QObject):
         if obj_id in self._outline_actors:
             try:
                 self.renderer.RemoveActor(self._outline_actors[obj_id])
-            except:
+            except Exception:
                 pass
             del self._outline_actors[obj_id]
 
@@ -553,7 +555,7 @@ class ObjectManager(QObject):
                 max_y = max(max_y, bounds[3])
                 min_z = min(min_z, bounds[4])
                 max_z = max(max_z, bounds[5])
-            except:
+            except Exception:
                 continue
 
         if min_x == float("inf") or max_x == float("-inf"):
@@ -586,5 +588,5 @@ class ObjectManager(QObject):
             rw = self.renderer.GetRenderWindow()
             if rw:
                 rw.Render()
-        except:
+        except Exception:
             pass

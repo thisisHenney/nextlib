@@ -15,7 +15,7 @@ class ZipTool:
         compress_level: int = 6
     ) -> Path:
         src = Path(src)
-        zip_path = ZipTools._ensure_zip_suffix(Path(zip_path))
+        zip_path = ZipTool._ensure_zip_suffix(Path(zip_path))
 
         with zipfile.ZipFile(
             zip_path,
@@ -34,7 +34,7 @@ class ZipTool:
         compress_level: int = 6
     ) -> Path:
         folder = Path(folder)
-        zip_path = ZipTools._ensure_zip_suffix(Path(zip_path))
+        zip_path = ZipTool._ensure_zip_suffix(Path(zip_path))
 
         with zipfile.ZipFile(
             zip_path,
@@ -56,7 +56,7 @@ class ZipTool:
         compress_level: int = 6
     ) -> Path:
         folder = Path(folder)
-        zip_path = ZipTools._ensure_zip_suffix(Path(zip_path))
+        zip_path = ZipTool._ensure_zip_suffix(Path(zip_path))
         extensions = {ext.lower() for ext in extensions}
 
         with zipfile.ZipFile(

@@ -188,12 +188,17 @@ class DockWidget(QObject):
     def toggle_dock(self, number: int):
         dock_info = self.docks.get(number)
         if dock_info and dock_info.dock.isVisible():
-            self.hide_dock(self, number)
+            self.hide_dock(number)
         else:
-            self.show_dock(self, number)
+            self.show_dock(number)
 
     def set_tabify(self, number_src: int, number_sub: int):
-        self.tabifyDockWidget
+        src_info = self.docks.get(number_src)
+        sub_info = self.docks.get(number_sub)
+        if src_info and sub_info:
+            area = src_info.dock.dockAreaWidget()
+            if area:
+                self.dock_manager.addDockWidgetTabToArea(sub_info.dock, area)
 
 
     def save_layout(self, filepath=None):

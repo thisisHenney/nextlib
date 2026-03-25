@@ -54,7 +54,7 @@ if __name__ == '__main__':
     if len(target_args) == 0:
         target_path = terminal_dir / 'view'
         if not target_path.is_dir():
-            print(f"Error: {target_path} 폴더가 없습니다.")
+            print(f"Error: Directory not found: {target_path}")
             sys.exit(1)
 
         ui_files = list(Path(target_path).glob('**/*.ui'))
@@ -70,7 +70,7 @@ if __name__ == '__main__':
             ui_files = list(target_path.glob("**/*.ui"))
         
         else:
-            print(f"[!] 파일 또는 경로를 찾을 수 없습니다. : {target_arg}")
+            print(f"[!] File or path not found: {target_arg}")
             sys.exit(1)
 
     print(f"## Qt Designer UI Converter ##")

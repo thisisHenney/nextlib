@@ -270,6 +270,7 @@ class ExecWidget(QWidget):
         mono_font.setPointSize(FONT_SIZE)
         self._output_view.setFont(mono_font)
         self._output_view.setMaximumBlockCount(100000)
+        self._output_view.setCursorWidth(0)
 
     def put_in_layout(self, layout):
         layout.addWidget(self)
@@ -804,7 +805,10 @@ class ExecWidget(QWidget):
             if current_view == proc_idx:
                 self._close_log_file_for(proc_idx)
                 text = self.get_messages(proc_idx)
+                scrollbar = self._output_view.verticalScrollBar()
+                scroll_pos = scrollbar.value()
                 self.set_text(text, 1)
+                scrollbar.setValue(scroll_pos)
 
             try:
                 proc.readyReadStandardOutput.disconnect()

@@ -592,9 +592,9 @@ class ExecWidget(QWidget):
                 if isinstance(c, tuple) and len(c) == 3:
                     self._commands.append(c)
                 elif isinstance(c, tuple) and len(c) == 2:
-                    self._commands.append((c[0], c[1], None))
+                    self._commands.append(c)
                 else:
-                    self._commands.append((c, c, None))
+                    self._commands.append((c, c))
 
         if not self._commands:
             self.add_log_error(0, 'There are no commands')
@@ -648,10 +648,13 @@ class ExecWidget(QWidget):
 
             self._procs.append(new_proc)
 
-            _cmd, _label, _wdir = self._commands.pop(0)
-            if _wdir:
-                new_proc.setWorkingDirectory(_wdir)
-            self._procs_cmd.append([self._cur_count, _cmd, _label])
+            _item = self._commands.pop(0)
+            if len(_item) == 3:
+                _cmd, _label, _folder = _item
+            else:
+                _cmd, _label = _item
+                _folder = None
+            self._procs_cmd.append([self._cur_count, _cmd, _label, _folder])
             self._cur_count += 1
 
             self._thread_find_cpus.append(None)
@@ -687,8 +690,13 @@ class ExecWidget(QWidget):
 
         _cmd = self._procs_cmd[proc_idx][1]
         _label = self._procs_cmd[proc_idx][2] if len(self._procs_cmd[proc_idx]) > 2 else _cmd
+        _folder = self._procs_cmd[proc_idx][3] if len(self._procs_cmd[proc_idx]) > 3 else None
+        if _folder:
+            _display = f'{_label}  {_folder}'
+        else:
+            _display = _label
         if self._show_command:
-            self.add_log_command(self._procs_cmd[proc_idx][0], _label)
+            self.add_log_command(self._procs_cmd[proc_idx][0], _display)
         else:
             if self._task_name:
                 self.add_log_command(self._procs_cmd[proc_idx][0], self._task_name)
@@ -700,6 +708,7 @@ class ExecWidget(QWidget):
         self.show_process_state(proc_idx)
 
         _cmd = self._procs_cmd[proc_idx][1]
+        _folder = self._procs_cmd[proc_idx][3] if len(self._procs_cmd[proc_idx]) > 3 else None
 
         if self._stop_all_proc:
             self._stopped_proc(proc_idx, f'Cannot execute: {_cmd}')
@@ -712,6 +721,9 @@ class ExecWidget(QWidget):
         self._start_time[proc_idx] = time.time()
 
         self._pending_cpu_assign[proc_idx] = get_cpu
+
+        if _folder:
+            self._procs[proc_idx].setWorkingDirectory(_folder)
 
         split_cmd = self._procs[proc_idx].splitCommand(_cmd)
         if len(split_cmd) == 1:
@@ -876,10 +888,13 @@ class ExecWidget(QWidget):
         if self._added_env:
             new_proc.setProcessEnvironment(self._added_env)
 
-        _cmd, _label, _wdir = self._commands.pop(0)
-        if _wdir:
-            new_proc.setWorkingDirectory(_wdir)
-        self._procs_cmd[proc_idx] = [self._cur_count, _cmd, _label]
+        _item = self._commands.pop(0)
+        if len(_item) == 3:
+            _cmd, _label, _folder = _item
+        else:
+            _cmd, _label = _item
+            _folder = None
+        self._procs_cmd[proc_idx] = [self._cur_count, _cmd, _label, _folder]
         self._cur_count += 1
 
         self._get_usable_procs(proc_idx)

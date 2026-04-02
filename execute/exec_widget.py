@@ -727,13 +727,19 @@ class ExecWidget(QWidget):
             self._procs[proc_idx].setWorkingDirectory(_folder)
 
         split_cmd = self._procs[proc_idx].splitCommand(_cmd)
-        if len(split_cmd) == 1:
-            self._procs[proc_idx].start(split_cmd[0])
-        elif len(split_cmd) > 1:
-            self._procs[proc_idx].start(split_cmd[0], split_cmd[1:])
-        else:
+        if len(split_cmd) == 0:
             self._stopped_proc(proc_idx, f'There is no command: {_cmd}')
             return False
+
+        exe_path = Path(split_cmd[0])
+        if not exe_path.exists():
+            self._stopped_proc(proc_idx, f'File not found: {split_cmd[0]}')
+            return False
+
+        if len(split_cmd) == 1:
+            self._procs[proc_idx].start(split_cmd[0])
+        else:
+            self._procs[proc_idx].start(split_cmd[0], split_cmd[1:])
 
         self.sig_proc_status.emit(proc_idx, get_cpu, -1, 'Starting')
         return True

@@ -174,6 +174,15 @@ class ExecWidget(QWidget):
     def _get_log_path(self, proc_idx: int):
         return Path(self._working_path) / f'stdout_{proc_idx}.log'
 
+    def _close_log_file_for(self, proc_idx):
+        if proc_idx < len(self._log_file_handles):
+            fh = self._log_file_handles[proc_idx]
+            if fh:
+                try:
+                    fh.flush()
+                except Exception:
+                    pass
+
     def _close_log_files(self):
         for fh in self._log_file_handles:
             if fh:
@@ -186,7 +195,7 @@ class ExecWidget(QWidget):
     def _initialize(self):
         self._init_edit()
         self.add_log_ready()
-        self.set_tracking(True)
+        self.set_tracking(False)
 
         self._ui.pushButton_clear.clicked.connect(self._clicked_button_clear)
         self._ui.checkBox_tracking.hide()
@@ -238,9 +247,11 @@ class ExecWidget(QWidget):
         else:
             self._ui.stackedWidget.setCurrentIndex(1)
             self._ui.checkBox_tracking.show()
-            if not self.is_running():
-                text = self.get_messages(index - 1)
-                self.set_text(text, index)
+            proc_idx = index - 1
+            self._close_log_file_for(proc_idx)
+            self._output_buffer.pop(proc_idx, None)
+            text = self.get_messages(proc_idx)
+            self.set_text(text, index)
             self.set_scroll_bottom(1)
 
     def _init_edit(self):
@@ -518,6 +529,10 @@ class ExecWidget(QWidget):
             if not chunks:
                 return
 
+            current_view = self.get_current_view() - 1
+            if current_view != proc_idx:
+                return
+
             text = ''.join(chunks)
             self._output_buffer[proc_idx] = []
 
@@ -574,10 +589,12 @@ class ExecWidget(QWidget):
             if not isinstance(commands, list):
                 commands = [commands]
             for c in commands:
-                if isinstance(c, tuple) and len(c) == 2:
+                if isinstance(c, tuple) and len(c) == 3:
                     self._commands.append(c)
+                elif isinstance(c, tuple) and len(c) == 2:
+                    self._commands.append((c[0], c[1], None))
                 else:
-                    self._commands.append((c, c))
+                    self._commands.append((c, c, None))
 
         if not self._commands:
             self.add_log_error(0, 'There are no commands')
@@ -595,9 +612,11 @@ class ExecWidget(QWidget):
             self._progressbar.setRange(0, 100)
             self._progressbar.setValue(0)
 
+        self._ui.comboBox_output_proc_index.blockSignals(True)
         self._ui.comboBox_output_proc_index.clear()
         self._ui.comboBox_output_proc_index.addItem('Log')
         self._ui.comboBox_output_proc_index.addItems([str(f'Proc. {i}') for i in range(self._using_proc_num)])
+        self._ui.comboBox_output_proc_index.blockSignals(False)
 
         for i in range(self._using_proc_num):
             try:
@@ -629,7 +648,9 @@ class ExecWidget(QWidget):
 
             self._procs.append(new_proc)
 
-            _cmd, _label = self._commands.pop(0)
+            _cmd, _label, _wdir = self._commands.pop(0)
+            if _wdir:
+                new_proc.setWorkingDirectory(_wdir)
             self._procs_cmd.append([self._cur_count, _cmd, _label])
             self._cur_count += 1
 
@@ -714,7 +735,10 @@ class ExecWidget(QWidget):
                 proc.finished.disconnect()
             except (RuntimeError, TypeError):
                 pass
-            proc.deleteLater()
+            try:
+                proc.deleteLater()
+            except RuntimeError:
+                pass
         self._procs[proc_idx] = None
 
         self._procs_state[proc_idx] = QProcess.ProcessState.NotRunning
@@ -762,7 +786,14 @@ class ExecWidget(QWidget):
                     self.add_message_output(remaining, proc_idx)
             except (RuntimeError, AttributeError):
                 pass
-            self._flush_output_buffer_for(proc_idx)
+            self._output_buffer.pop(proc_idx, None)
+
+            current_view = self.get_current_view() - 1
+            if current_view == proc_idx:
+                self._close_log_file_for(proc_idx)
+                text = self.get_messages(proc_idx)
+                self.set_text(text, 1)
+
             try:
                 proc.readyReadStandardOutput.disconnect()
                 proc.readyReadStandardError.disconnect()
@@ -770,7 +801,10 @@ class ExecWidget(QWidget):
                 proc.finished.disconnect()
             except (RuntimeError, TypeError):
                 pass
-            proc.deleteLater()
+            try:
+                proc.deleteLater()
+            except RuntimeError:
+                pass
         self._procs[proc_idx] = None
 
         self._procs_state[proc_idx] = QProcess.ProcessState.NotRunning
@@ -842,7 +876,9 @@ class ExecWidget(QWidget):
         if self._added_env:
             new_proc.setProcessEnvironment(self._added_env)
 
-        _cmd, _label = self._commands.pop(0)
+        _cmd, _label, _wdir = self._commands.pop(0)
+        if _wdir:
+            new_proc.setWorkingDirectory(_wdir)
         self._procs_cmd[proc_idx] = [self._cur_count, _cmd, _label]
         self._cur_count += 1
 

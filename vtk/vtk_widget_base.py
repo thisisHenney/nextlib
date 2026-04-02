@@ -375,14 +375,18 @@ class VtkWidgetBase(QMainWindow):
                 obj.actor.SetVisibility(group == "mesh")
             elif mode == "both":
                 obj.actor.SetVisibility(True)
-                if group == "geometry":
-                    obj.actor.GetProperty().SetOpacity(0.3)
-                else:
-                    obj.actor.GetProperty().SetOpacity(1.0)
+                prop = getattr(obj.actor, 'GetProperty', None)
+                if prop is not None:
+                    if group == "geometry":
+                        prop().SetOpacity(0.3)
+                    else:
+                        prop().SetOpacity(1.0)
 
         if mode != "both":
             for obj in self.obj_manager.get_all():
-                obj.actor.GetProperty().SetOpacity(1.0)
+                prop = getattr(obj.actor, 'GetProperty', None)
+                if prop is not None:
+                    prop().SetOpacity(1.0)
 
         self.render()
 

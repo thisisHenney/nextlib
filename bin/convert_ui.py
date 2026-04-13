@@ -84,10 +84,11 @@ if __name__ == '__main__':
         else:
             print(f' [{i + 1}/{totalNum}] Converting... {source.name:<16} -> {source.stem}_ui.py')
 
+            uic_exe = Path(list(PySide6.__path__)[0]) / ("uic.exe" if os.name == "nt" else "uic")
             try:
                 subprocess.run(["pyside6-uic", str(source), "-o", str(target)], check=True)
             except FileNotFoundError:
-                subprocess.run([sys.executable, "-m", "PySide6.uic", str(source), "-o", str(target)], check=True)
+                subprocess.run([str(uic_exe), "-g", "python", str(source), "-o", str(target)], check=True)
 
             if disable_centralwidget_set:
                 modify_ui_py_file(str(target), disable_centralwidget_set)

@@ -272,6 +272,19 @@ class ExecWidget(QWidget):
         self._output_view.setMaximumBlockCount(100000)
         self._output_view.setCursorWidth(0)
 
+        self._pending_scroll_to_bottom = False
+        self._output_view.document().documentLayout().documentSizeChanged.connect(
+            self._on_output_document_size_changed
+        )
+
+    def _on_output_document_size_changed(self, *_):
+        if not self._pending_scroll_to_bottom:
+            return
+        sb = self._output_view.verticalScrollBar()
+        sb.setValue(sb.maximum())
+        if not self._is_tracking:
+            self._pending_scroll_to_bottom = False
+
     def put_in_layout(self, layout):
         layout.addWidget(self)
 
@@ -429,9 +442,10 @@ class ExecWidget(QWidget):
             view = self._log_view
         else:
             view = self._output_view
+            self._pending_scroll_to_bottom = True
 
-        scrollbar = view.verticalScrollBar()
-        scrollbar.setSliderPosition(scrollbar.maximum())
+        sb = view.verticalScrollBar()
+        sb.setValue(sb.maximum())
 
     def clear_view(self, index=-1):
         if index == 0 or index == -1:
@@ -544,8 +558,9 @@ class ExecWidget(QWidget):
             self._output_view.insertPlainText(text)
 
             if self._is_tracking:
-                scrollbar = self._output_view.verticalScrollBar()
-                scrollbar.setValue(scrollbar.maximum())
+                self._pending_scroll_to_bottom = True
+                sb = self._output_view.verticalScrollBar()
+                sb.setValue(sb.maximum())
         except Exception:
             pass
 
@@ -621,7 +636,7 @@ class ExecWidget(QWidget):
 
         for i in range(self._using_proc_num):
             try:
-                fh = open(self._get_log_path(i), 'w', encoding='utf-8', buffering=1)
+                fh = open(self._get_log_path(i), 'w', encoding='utf-8', newline='', buffering=1)
                 self._log_file_handles.append(fh)
             except Exception:
                 self._log_file_handles.append(None)

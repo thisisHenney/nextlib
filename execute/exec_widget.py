@@ -41,12 +41,17 @@ class FindUsableCPU(QThread):
     founded = Signal(int)
     stopped = Signal()
 
-    def __init__(self, available_cpus=None, ratio=5.0):
+    def __init__(self, available_cpus=None, ratio=5.0, excluded_cpus=None):
         super().__init__()
 
         self.available_cpus = available_cpus or []
         self.ratio = ratio
         self.stop_message = False
+        self.excluded_cpus = set(excluded_cpus) if excluded_cpus else set()
+
+    def _filtered_pool(self):
+        pool = [c for c in self.available_cpus if c not in self.excluded_cpus]
+        return pool if pool else list(self.available_cpus)
 
     def run(self):
         self.waiting.emit()
@@ -54,13 +59,14 @@ class FindUsableCPU(QThread):
         _max_tries = 25
         _tries = 0
         while _get_cpu == -1:
-            _get_cpu = get_idle_cpu(self.available_cpus, self.ratio)
+            pool = self._filtered_pool()
+            _get_cpu = get_idle_cpu(pool, self.ratio)
             if _get_cpu != -1:
                 break
             _tries += 1
             if _tries >= _max_tries:
                 import random
-                _pool = list(self.available_cpus) if self.available_cpus else list(range(get_cpu_num()))
+                _pool = pool if pool else list(range(get_cpu_num()))
                 _get_cpu = random.choice(_pool) if _pool else 0
                 break
             QThread.msleep(200)
@@ -105,6 +111,8 @@ class ExecWidget(QWidget):
         self._procs_state = []
         self._thread_find_cpus = []
         self._pending_cpu_assign = {}
+        self._proc_cpu_map = {}
+        self._cmd_logged = set()
 
         self._stop_all_proc = False
         self._pause_all_proc = False
@@ -333,6 +341,8 @@ class ExecWidget(QWidget):
         self._procs_state = []
         self._thread_find_cpus = []
         self._pending_cpu_assign = {}
+        self._proc_cpu_map = {}
+        self._cmd_logged = set()
 
         self._stop_all_proc = False
         self._pause_all_proc = False
@@ -377,6 +387,38 @@ class ExecWidget(QWidget):
             return
 
         self.set_defaults(True)
+
+    def _soft_reset_for_continue(self):
+        if self.is_running():
+            return
+
+        self._commands = []
+        self._total_cmd_num = 0
+        self._cur_count = 1
+
+        self._procs = []
+        self._procs_cmd = []
+        self._procs_state = []
+        self._thread_find_cpus = []
+        self._pending_cpu_assign = {}
+        self._proc_cpu_map = {}
+        self._cmd_logged = set()
+
+        self._stop_all_proc = False
+        self._pause_all_proc = False
+
+        self._using_proc_num = 0
+
+        self._funcs_changed_state = []
+        self._funcs_get_message_output = []
+        self._funcs_get_message_error = []
+        self._funcs_get_finished = []
+
+        self._close_log_files()
+        self._log_file_handles = []
+
+        self._start_time = []
+        self._elapsed_time = []
 
     def set_edit_font(self, font=''):
         self._log_view.setStyleSheet(font)
@@ -589,12 +631,15 @@ class ExecWidget(QWidget):
     def set_function_restore_ui(self, func=None, *argv):
         self._funcs_restore_ui.append([func, *argv])
 
-    def run(self, commands):
+    def run(self, commands, continue_previous=False):
         if self.is_running():
             messagebox_error(self._parent, text='Currently working on another task')
             return
 
-        self.reset()
+        if continue_previous:
+            self._soft_reset_for_continue()
+        else:
+            self.reset()
 
         if not commands:
             self.add_log_error(0, 'There are no commands')
@@ -628,15 +673,17 @@ class ExecWidget(QWidget):
             self._progressbar.setRange(0, 100)
             self._progressbar.setValue(0)
 
-        self._ui.comboBox_output_proc_index.blockSignals(True)
-        self._ui.comboBox_output_proc_index.clear()
-        self._ui.comboBox_output_proc_index.addItem('Log')
-        self._ui.comboBox_output_proc_index.addItems([str(f'Proc. {i}') for i in range(self._using_proc_num)])
-        self._ui.comboBox_output_proc_index.blockSignals(False)
+        if not continue_previous:
+            self._ui.comboBox_output_proc_index.blockSignals(True)
+            self._ui.comboBox_output_proc_index.clear()
+            self._ui.comboBox_output_proc_index.addItem('Log')
+            self._ui.comboBox_output_proc_index.addItems([str(f'Proc. {i}') for i in range(self._using_proc_num)])
+            self._ui.comboBox_output_proc_index.blockSignals(False)
 
+        file_mode = 'a' if continue_previous else 'w'
         for i in range(self._using_proc_num):
             try:
-                fh = open(self._get_log_path(i), 'w', encoding='utf-8', newline='', buffering=1)
+                fh = open(self._get_log_path(i), file_mode, encoding='utf-8', newline='', buffering=1)
                 self._log_file_handles.append(fh)
             except Exception:
                 self._log_file_handles.append(None)
@@ -689,10 +736,17 @@ class ExecWidget(QWidget):
             self._thread_find_cpus[proc_idx].wait(1000)
             self._thread_find_cpus[proc_idx] = None
 
+        excluded = set(v for k, v in self._pending_cpu_assign.items() if k != proc_idx)
+        excluded |= set(v for k, v in self._proc_cpu_map.items() if k != proc_idx)
+
         if self._is_assigned_cpu:
-            self._thread_find_cpus[proc_idx] = FindUsableCPU(self._assigned_cpus, self._idle_ratio)
+            self._thread_find_cpus[proc_idx] = FindUsableCPU(
+                self._assigned_cpus, self._idle_ratio, excluded
+            )
         else:
-            self._thread_find_cpus[proc_idx] = FindUsableCPU(self._available_cpus, self._idle_ratio)
+            self._thread_find_cpus[proc_idx] = FindUsableCPU(
+                self._available_cpus, self._idle_ratio, excluded
+            )
 
         self._thread_find_cpus[proc_idx].waiting.connect(partial(self._waiting_proc, proc_idx))
         self._thread_find_cpus[proc_idx].founded.connect(partial(self._start_proc, proc_idx))
@@ -703,6 +757,10 @@ class ExecWidget(QWidget):
         self._procs_state[proc_idx] = QProcess_ProcessState_WAITING
         self.show_process_state(proc_idx)
         self.sig_proc_status.emit(proc_idx, -1, -1, 'Waiting')
+
+        if proc_idx in self._cmd_logged:
+            return
+        self._cmd_logged.add(proc_idx)
 
         _cmd = self._procs_cmd[proc_idx][1]
         _label = self._procs_cmd[proc_idx][2] if len(self._procs_cmd[proc_idx]) > 2 else _cmd
@@ -736,7 +794,14 @@ class ExecWidget(QWidget):
 
         self._start_time[proc_idx] = time.time()
 
+        other_claimed = set(v for k, v in self._pending_cpu_assign.items() if k != proc_idx)
+        other_claimed |= set(v for k, v in self._proc_cpu_map.items() if k != proc_idx)
+        if get_cpu in other_claimed:
+            self._get_usable_procs(proc_idx)
+            return False
+
         self._pending_cpu_assign[proc_idx] = get_cpu
+        self._proc_cpu_map[proc_idx] = get_cpu
 
         if _folder:
             self._procs[proc_idx].setWorkingDirectory(_folder)
@@ -774,6 +839,7 @@ class ExecWidget(QWidget):
             except RuntimeError:
                 pass
         self._procs[proc_idx] = None
+        self._proc_cpu_map.pop(proc_idx, None)
 
         self._procs_state[proc_idx] = QProcess.ProcessState.NotRunning
         self.show_process_state(proc_idx)
@@ -843,6 +909,7 @@ class ExecWidget(QWidget):
             except RuntimeError:
                 pass
         self._procs[proc_idx] = None
+        self._proc_cpu_map.pop(proc_idx, None)
 
         self._procs_state[proc_idx] = QProcess.ProcessState.NotRunning
 
@@ -922,6 +989,7 @@ class ExecWidget(QWidget):
         self._procs_cmd[proc_idx] = [self._cur_count, _cmd, _label, _folder]
         self._cur_count += 1
 
+        self._cmd_logged.discard(proc_idx)
         self._get_usable_procs(proc_idx)
 
     def _changed_state(self, proc_idx, state):

@@ -181,6 +181,41 @@ class ObjectManager(QObject):
         self.object_added.emit(obj_id, name)
         return obj_id
 
+    def add_plain(self, actor, name: str = "", group: str = "default") -> int:
+        """스타일 적용/카메라 리셋 없이 객체를 등록
+
+        vtkAssembly처럼 GetProperty()가 없는 prop이나, 프레임 단위로
+        교체되는 객체(애니메이션 등)에 사용. add()와 달리 스타일 적용,
+        첫 객체 ResetCamera, object_added 시그널 발생을 하지 않는다.
+
+        Args:
+            actor: VTK Prop (vtkActor, vtkAssembly 등)
+            name: 객체 이름 (비어있으면 자동 생성)
+            group: 그룹 이름
+
+        Returns:
+            객체 ID
+        """
+        if actor is None:
+            return -1
+
+        obj_id = self._next_id
+        self._next_id += 1
+
+        if not name:
+            name = f"object_{obj_id}"
+
+        try:
+            r, g, b = actor.GetProperty().GetColor()
+            color = (int(r * 255), int(g * 255), int(b * 255))
+        except AttributeError:
+            color = (255, 255, 255)
+
+        obj = ObjectData(id=obj_id, actor=actor, name=name, group=group, color=color)
+        self._objects[obj_id] = obj
+        self.renderer.AddActor(actor)
+        return obj_id
+
     def get(self, obj_id: int) -> Optional[ObjectData]:
         """ID로 ObjectData 직접 조회"""
         obj = self._objects.get(obj_id)

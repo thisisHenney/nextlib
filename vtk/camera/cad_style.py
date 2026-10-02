@@ -114,15 +114,54 @@ class CADInteractorStyle(vtkInteractorStyleTrackballCamera):
             self.OnMouseMove()
             self._sync_camera()
 
+    @staticmethod
+    def _focal_plane_point(renderer, camera, x, y):
+        """화면 좌표 (x, y) 가 가리키는, 초점 평면 위의 월드 좌표."""
+        fp = camera.GetFocalPoint()
+        renderer.SetWorldPoint(fp[0], fp[1], fp[2], 1.0)
+        renderer.WorldToDisplay()
+        z = renderer.GetDisplayPoint()[2]
+
+        renderer.SetDisplayPoint(x, y, z)
+        renderer.DisplayToWorld()
+        w = renderer.GetWorldPoint()
+        if w[3] == 0.0:
+            return None
+        return (w[0] / w[3], w[1] / w[3], w[2] / w[3])
+
     def _zoom(self, factor):
+        """마우스 커서가 가리키는 지점을 기준으로 확대/축소한다.
+
+        화면 중심(초점)만 기준으로 확대하면, 패닝해서 보고 싶은 것을 가장자리로
+        옮겨 놓은 상태에서는 확대할수록 그게 화면 밖으로 밀려나 더 못 보게 된다.
+        확대 전후로 커서 아래 월드 좌표를 재서, 그 지점이 제자리에 남도록 카메라를
+        (초점과 위치를 함께) 옮긴다. 초점 평면 안에서만 움직이므로 보는 거리와
+        방향은 그대로다.
+        """
         renderer = self.GetDefaultRenderer()
         if not renderer:
             return
         camera = renderer.GetActiveCamera()
+        interactor = self.GetInteractor()
+
+        before = None
+        if interactor is not None:
+            x, y = interactor.GetEventPosition()
+            before = self._focal_plane_point(renderer, camera, x, y)
+
         if camera.GetParallelProjection():
             camera.SetParallelScale(camera.GetParallelScale() / factor)
         else:
             camera.Dolly(factor)
+
+        if before is not None:
+            after = self._focal_plane_point(renderer, camera, x, y)
+            if after is not None:
+                shift = [b - a for b, a in zip(before, after)]
+                fp, pos = camera.GetFocalPoint(), camera.GetPosition()
+                camera.SetFocalPoint(*[v + s for v, s in zip(fp, shift)])
+                camera.SetPosition(*[v + s for v, s in zip(pos, shift)])
+
         renderer.ResetCameraClippingRange()
         self.GetInteractor().Render()
         self._sync_camera()

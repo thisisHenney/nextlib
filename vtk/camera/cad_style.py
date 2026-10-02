@@ -115,13 +115,8 @@ class CADInteractorStyle(vtkInteractorStyleTrackballCamera):
             self._sync_camera()
 
     @staticmethod
-    def _focal_plane_point(renderer, camera, x, y):
-        """화면 좌표 (x, y) 가 가리키는, 초점 평면 위의 월드 좌표."""
-        fp = camera.GetFocalPoint()
-        renderer.SetWorldPoint(fp[0], fp[1], fp[2], 1.0)
-        renderer.WorldToDisplay()
-        z = renderer.GetDisplayPoint()[2]
-
+    def _display_to_world(renderer, x, y, z):
+        """화면 좌표 (x, y) + 깊이 z -> 월드 좌표."""
         renderer.SetDisplayPoint(x, y, z)
         renderer.DisplayToWorld()
         w = renderer.GetWorldPoint()
@@ -129,14 +124,55 @@ class CADInteractorStyle(vtkInteractorStyleTrackballCamera):
             return None
         return (w[0] / w[3], w[1] / w[3], w[2] / w[3])
 
-    def _zoom(self, factor):
-        """마우스 커서가 가리키는 지점을 기준으로 확대/축소한다.
+    def _depth_of(self, renderer, point):
+        """월드 좌표의 화면 깊이값(0~1)."""
+        renderer.SetWorldPoint(point[0], point[1], point[2], 1.0)
+        renderer.WorldToDisplay()
+        return renderer.GetDisplayPoint()[2]
 
-        화면 중심(초점)만 기준으로 확대하면, 패닝해서 보고 싶은 것을 가장자리로
-        옮겨 놓은 상태에서는 확대할수록 그게 화면 밖으로 밀려나 더 못 보게 된다.
-        확대 전후로 커서 아래 월드 좌표를 재서, 그 지점이 제자리에 남도록 카메라를
-        (초점과 위치를 함께) 옮긴다. 초점 평면 안에서만 움직이므로 보는 거리와
-        방향은 그대로다.
+    def _zoom_target(self, renderer, camera, x, y):
+        """확대의 기준점: 커서 아래에 실제로 그려진 형상 위의 점.
+
+        깊이 버퍼를 한 픽셀만 읽어서 구한다(픽커보다 훨씬 싸다).
+
+        커서 아래가 빈 배경이면 '화면에 보이는 형상 전체의 가운데'와 같은 깊이에서
+        잡는다. 초점 깊이를 쓰면 안 된다 - 회전한 뒤 패닝하면 초점이 형상에서 멀리
+        떨어진 허공에 남는데, 그 깊이를 기준으로 삼으면 계속 허공을 향해 당기게 된다.
+        """
+        window = renderer.GetRenderWindow()
+        if window is not None:
+            try:
+                z = window.GetZbufferDataAtPoint(int(x), int(y))
+            except (AttributeError, TypeError):
+                z = None
+            # 1.0 = 아무것도 안 그려진 배경(먼 평면)
+            if z is not None and 0.0 <= z < 0.999999:
+                point = self._display_to_world(renderer, x, y, z)
+                if point is not None:
+                    return point
+
+        bounds = renderer.ComputeVisiblePropBounds()
+        if bounds[0] <= bounds[1]:
+            center = ((bounds[0] + bounds[1]) / 2.0,
+                      (bounds[2] + bounds[3]) / 2.0,
+                      (bounds[4] + bounds[5]) / 2.0)
+        else:
+            center = camera.GetFocalPoint()
+        return self._display_to_world(renderer, x, y, self._depth_of(renderer, center))
+
+    def _zoom(self, factor):
+        """커서가 가리키는 형상 위의 점을 향해 확대/축소한다.
+
+        초점(화면 중심)만 향해 당기면 두 가지가 어긋난다.
+        - 보고 싶은 것을 패닝으로 가장자리에 옮겨 둔 상태에서는, 확대할수록 그게
+          화면 밖으로 밀려나 오히려 더 못 보게 된다.
+        - 화면을 회전한 뒤 패닝하면 초점이 형상에서 멀리 떨어진 허공에 남는다.
+          그러면 카메라는 그 허공을 향해 다가가므로 형상은 거의 커지지 않고,
+          계속 당기면 형상을 뚫고 지나가 버린다.
+
+        그래서 기준점을 커서 아래의 실제 형상으로 잡고, 카메라 위치와 초점을 그
+        점을 중심으로 1/factor 배 끌어당긴다. 기준점은 화면에서 제자리에 남고,
+        초점도 형상 쪽으로 따라와서 몇 번을 확대해도 같은 비율로 계속 커진다.
         """
         renderer = self.GetDefaultRenderer()
         if not renderer:
@@ -144,23 +180,25 @@ class CADInteractorStyle(vtkInteractorStyleTrackballCamera):
         camera = renderer.GetActiveCamera()
         interactor = self.GetInteractor()
 
-        before = None
+        target = None
         if interactor is not None:
             x, y = interactor.GetEventPosition()
-            before = self._focal_plane_point(renderer, camera, x, y)
+            target = self._zoom_target(renderer, camera, x, y)
 
-        if camera.GetParallelProjection():
-            camera.SetParallelScale(camera.GetParallelScale() / factor)
+        if target is None:
+            # 기준점을 못 구하면 예전처럼 초점을 향해 당긴다.
+            if camera.GetParallelProjection():
+                camera.SetParallelScale(camera.GetParallelScale() / factor)
+            else:
+                camera.Dolly(factor)
         else:
-            camera.Dolly(factor)
+            def pull(p):
+                return [t + (v - t) / factor for v, t in zip(p, target)]
 
-        if before is not None:
-            after = self._focal_plane_point(renderer, camera, x, y)
-            if after is not None:
-                shift = [b - a for b, a in zip(before, after)]
-                fp, pos = camera.GetFocalPoint(), camera.GetPosition()
-                camera.SetFocalPoint(*[v + s for v, s in zip(fp, shift)])
-                camera.SetPosition(*[v + s for v, s in zip(pos, shift)])
+            camera.SetPosition(*pull(camera.GetPosition()))
+            camera.SetFocalPoint(*pull(camera.GetFocalPoint()))
+            if camera.GetParallelProjection():
+                camera.SetParallelScale(camera.GetParallelScale() / factor)
 
         renderer.ResetCameraClippingRange()
         self.GetInteractor().Render()

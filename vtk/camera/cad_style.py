@@ -73,6 +73,7 @@ class CADInteractorStyle(vtkInteractorStyleTrackballCamera):
             self._handle_double_click()
             return
 
+        self._recenter_pivot()
         if self._shift_pressed:
             self._is_panning = True
             self.OnMiddleButtonDown()
@@ -95,6 +96,7 @@ class CADInteractorStyle(vtkInteractorStyleTrackballCamera):
         self._sync_camera()
 
     def _on_middle_button_down(self, obj, event):
+        self._recenter_pivot()
         self._is_panning = True
         self.OnMiddleButtonDown()
 
@@ -113,6 +115,38 @@ class CADInteractorStyle(vtkInteractorStyleTrackballCamera):
         if self._is_rotating or self._is_panning or self._ctrl_pressed:
             self.OnMouseMove()
             self._sync_camera()
+
+    def _recenter_pivot(self):
+        """회전/이동/확대 중심(카메라 초점)을 지금 화면 중심에 보이는 형상으로 옮긴다.
+
+        VTK 는 초점을 중심으로 회전한다. 그런데 패닝하거나 커서 쪽으로 확대하고 나면 초점이
+        형상에서 떨어진 허공에 남는다(떨어진 만큼 화면이 크게 휘돈다). 마우스 조작을 시작하는
+        순간 화면 중심 아래의 형상 깊이로 초점을 다시 잡는다.
+
+        카메라 위치와 보는 방향은 그대로 두고 초점만 같은 시선 위에서 앞뒤로 옮기므로,
+        화면은 조금도 바뀌지 않는다.
+        """
+        renderer = self.GetDefaultRenderer()
+        if not renderer:
+            return
+        camera = renderer.GetActiveCamera()
+        width, height = renderer.GetSize()
+        if width <= 0 or height <= 0:
+            return
+
+        target = self._zoom_target(renderer, camera, width // 2, height // 2)
+        if target is None:
+            return
+
+        # 대상은 화면 중심의 시선 위에 있어야 한다. 깊이 버퍼의 오차로 벗어난 만큼은 버리고
+        # 시선 위로 정사영해서, 카메라 방향이 틀어지지 않게 한다.
+        pos = camera.GetPosition()
+        direction = camera.GetDirectionOfProjection()
+        along = sum((t - p) * d for t, p, d in zip(target, pos, direction))
+        if along <= 1e-6:
+            return      # 카메라 뒤쪽은 의미 없다
+        camera.SetFocalPoint(*[p + d * along for p, d in zip(pos, direction)])
+        renderer.ResetCameraClippingRange()
 
     @staticmethod
     def _display_to_world(renderer, x, y, z):

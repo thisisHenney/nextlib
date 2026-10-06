@@ -30,8 +30,6 @@ class AxesTool(QObject):
         self._marker_widget.SetInteractor(self._interactor)
         self._marker_widget.SetViewport(0.0, 0.0, 0.2, 0.2)
 
-        self.show()
-
     def show(self):
         """축 표시"""
         if self._visible:

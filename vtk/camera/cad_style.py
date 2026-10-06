@@ -179,8 +179,10 @@ class CADInteractorStyle(vtkInteractorStyleTrackballCamera):
                 z = window.GetZbufferDataAtPoint(int(x), int(y))
             except (AttributeError, TypeError):
                 z = None
-            # 1.0 = 아무것도 안 그려진 배경(먼 평면)
-            if z is not None and 0.0 <= z < 0.999999:
+            # 1.0 = 아무것도 안 그려진 배경(먼 평면). 0.0 은 가까운 평면인데 실제 형상이
+            # 거기 닿을 일은 없고, 깊이를 못 읽었을 때 돌아오는 값이라 같이 거른다(받아들이면
+            # 카메라 코앞을 기준으로 확대해서 확대가 거의 안 된다).
+            if z is not None and 0.0 < z < 0.999999:
                 point = self._display_to_world(renderer, x, y, z)
                 if point is not None:
                     return point

@@ -239,6 +239,23 @@ class ObjectManager(QObject):
         self.object_removed.emit(obj_id, obj.name)
         return True
 
+    def discard(self, obj_id: int) -> bool:
+        """객체를 완전히 지운다 (렌더링은 하지 않음).
+
+        remove()는 soft delete 라 객체(액터와 그 형상 데이터)를 목록에 계속 들고 있다.
+        프레임마다 교체되는 애니메이션 액터처럼 되살릴 일이 없는 객체를 remove()로
+        지우면 프레임 수만큼 메모리가 쌓이고, group()/all() 이 그 목록을 매번 훑어
+        점점 느려진다. 그런 객체는 이 함수로 목록에서도 뺀다.
+        """
+        obj = self._objects.pop(obj_id, None)
+        if obj is None:
+            return False
+        if not obj.removed:
+            self.renderer.RemoveActor(obj.actor)
+            self._remove_outline(obj_id)
+            self._selected_ids.discard(obj_id)
+        return True
+
     def get_all(self, include_removed: bool = False) -> List[ObjectData]:
         """모든 객체 조회"""
         if include_removed:

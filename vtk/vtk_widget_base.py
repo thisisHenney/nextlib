@@ -203,7 +203,7 @@ class VtkWidgetBase(QMainWindow):
 
         self._axes_action = self._add_toggle_action(
             "Axes", "axes_on.png", "axes_off.png",
-            self._on_axes_toggled, checked=True
+            self._on_axes_toggled, checked=False
         )
 
         self._ruler_action = self._add_toggle_action(
@@ -226,7 +226,7 @@ class VtkWidgetBase(QMainWindow):
 
         self._ground_plane_combo = QComboBox()
         self._ground_plane_combo.addItems(["Off", "XY", "YZ", "XZ"])
-        self._ground_plane_combo.setCurrentText("XZ")
+        self._ground_plane_combo.setCurrentText("Off")
         self._ground_plane_combo.setToolTip("Ground Plane")
         self._ground_plane_combo.currentTextChanged.connect(self._on_ground_plane_changed)
         self.toolbar.addWidget(self._ground_plane_combo)

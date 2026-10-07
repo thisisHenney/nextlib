@@ -72,6 +72,9 @@ class DropDownItemWidget(QWidget):
         self.icon_opened = create_icon(ICON_PATH + '/opened.png')
         self.icon_closed = create_icon(ICON_PATH + '/closed.png')
 
+        self._pending_checked = None
+        self._pending_timer = None
+
         self._initialize(name)
 
     def _initialize(self, name):
@@ -136,9 +139,32 @@ class DropDownItemWidget(QWidget):
         self.animation.setEasingCurve(QEasingCurve.InCubic)
 
     def toggled_button(self, checked):
+        """헤더 버튼 클릭 처리. 더블클릭(체크 가능한 버튼이라 클릭마다 토글되므로
+        두 번째 클릭이 곧바로 반대로 되돌려버려 '열렸다가 바로 닫힘' 깜빡임이 생김)을
+        걸러내기 위해, 실제 반영은 더블클릭 판정 시간만큼 지연시킨다. 그 안에 다음
+        클릭이 들어오면 이번 토글은 통째로 무효화하고 버튼 상태를 원래대로 되돌린다."""
         if not self.button:
             return
-        if checked:
+
+        self._pending_checked = checked
+
+        if self._pending_timer is not None:
+            # 지연 시간 내에 또 클릭됨 -> 더블클릭으로 보고 이번 토글 전체를 무효화
+            self._pending_timer.stop()
+            self._pending_timer = None
+            self.button.blockSignals(True)
+            self.button.setChecked(self.is_opened)
+            self.button.blockSignals(False)
+            return
+
+        self._pending_timer = QTimer()
+        self._pending_timer.setSingleShot(True)
+        self._pending_timer.timeout.connect(self._apply_pending_toggle)
+        self._pending_timer.start(QApplication.doubleClickInterval())
+
+    def _apply_pending_toggle(self):
+        self._pending_timer = None
+        if self._pending_checked:
             self.is_opened = True
             self._animate_open()
             if self._scroll_area:
@@ -160,16 +186,23 @@ class DropDownItemWidget(QWidget):
             sb.setValue(item_y)
 
     def open_button(self):
+        self._cancel_pending_toggle()
         if self.button and not self.button.isChecked():
             self.is_opened = True
             self.button.setChecked(True)
             self._animate_open()
 
     def close_button(self):
+        self._cancel_pending_toggle()
         if self.button and self.button.isChecked():
             self.is_opened = False
             self.button.setChecked(False)
             self._animate_close()
+
+    def _cancel_pending_toggle(self):
+        if self._pending_timer is not None:
+            self._pending_timer.stop()
+            self._pending_timer = None
 
     def _animate_open(self):
         self.button.setIcon(self.icon_opened)
@@ -224,6 +257,12 @@ class DropDown(QWidget):
         if layout is not None:
             self._init_scroll_area(layout)
 
+        # 스크롤 영역 맨 아래에 뷰포트 높이만큼 여백을 둬서, 아래쪽에 남은 콘텐츠가
+        # 부족해도 어떤 항목이든 맨 위까지 스크롤할 수 있게 한다 (open_item에서 크기 갱신)
+        self._bottom_pad = QWidget()
+        self._bottom_pad.setFixedHeight(0)
+        self._layout.addWidget(self._bottom_pad)
+
         self._spacer = QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._layout.addSpacerItem(self._spacer)
 
@@ -264,14 +303,46 @@ class DropDown(QWidget):
         if 0 <= index < len(self.item_list):
             self.item_list[index].hide()
 
+    def show_only(self, indices):
+        """열림/닫힘 상태는 그대로 두고, indices에 해당하는 항목만 보이게 하고 나머지는 숨긴다"""
+        keep = set(indices)
+        for i in range(len(self.item_list)):
+            if i in keep:
+                self.show_item(i)
+            else:
+                self.hide_item(i)
+
+    def show_all(self):
+        for i in range(len(self.item_list)):
+            self.show_item(i)
+
     def open_item(self, index):
         if 0 <= index < len(self.item_list):
             item = self.item_list[index]
             item.open_button()
-            if hasattr(self, 'scroll_area'):
-                delay = item.animation_time + 20
-                QTimer.singleShot(delay, lambda: self.scroll_area.verticalScrollBar().setValue(item.y()))
+            delay = item.animation_time + 20
+            self._scroll_item_to_top(index, delay)
 
     def close_item(self, index):
         if 0 <= index < len(self.item_list):
             self.item_list[index].close_button()
+
+    def scroll_to_item(self, index):
+        """열림/닫힘 상태는 건드리지 않고, 해당 항목을 뷰포트 맨 위로 이동만 시킨다"""
+        self._scroll_item_to_top(index, 0)
+
+    def _scroll_item_to_top(self, index, delay):
+        if not (0 <= index < len(self.item_list)):
+            return
+        item = self.item_list[index]
+        if not hasattr(self, 'scroll_area'):
+            return
+        sa = self.scroll_area
+        if hasattr(self, '_bottom_pad'):
+            self._bottom_pad.setFixedHeight(sa.viewport().height())
+        QTimer.singleShot(delay, lambda: sa.verticalScrollBar().setValue(item.y()))
+
+    def is_item_open(self, index):
+        if 0 <= index < len(self.item_list):
+            return self.item_list[index].is_opened
+        return False

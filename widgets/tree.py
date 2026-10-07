@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 class TreeWidget(QObject):
     itemSelectedWithPos = Signal(list, int)
     itemDoubleClickedWithPos = Signal(list, int)
+    itemsSelectedWithPos = Signal(list)  # 현재 선택된 모든 항목의 pos 리스트 (다중선택용)
 
     def __init__(self, parent=None, widget: QTreeWidget = None):
         super().__init__(parent)
@@ -94,7 +95,14 @@ class TreeWidget(QObject):
 
     def _on_double_click(self, item, col):
         w = self.widget
-        if not item or col == 0 or w.itemWidget(item, col):
+        if not item or w.itemWidget(item, col):
+            self._editing = False
+            return
+
+        pos = self._get_item_pos(item)
+        self.itemDoubleClickedWithPos.emit(pos, col)
+
+        if col == 0:
             self._editing = False
             return
 
@@ -105,9 +113,6 @@ class TreeWidget(QObject):
         item.setFlags(item.flags() | Qt.ItemIsEditable)
         w.editItem(item, col)
         self._editing = True
-
-        pos = self._get_item_pos(item)
-        self.itemDoubleClickedWithPos.emit(pos, col)
 
     def _on_key_press(self, event):
         w = self.widget
@@ -152,6 +157,7 @@ class TreeWidget(QObject):
         pos = self._get_item_pos(item)
 
         self.itemSelectedWithPos.emit(pos, col)
+        self.itemsSelectedWithPos.emit([self._get_item_pos(it) for it in selected])
 
     def _get_item_pos(self, item):
         pos = []
@@ -314,6 +320,10 @@ class TreeWidget(QObject):
     def clear_all(self):
         self.widget.clear()
         self._editing = False
+        # widget.clear()는 C++ 쪽 QTreeWidgetItem을 지운다. 파이썬 래퍼가
+        # 이 집합에 남아 있으면 다음 add()에서 비교하다가
+        # "Internal C++ object already deleted"로 죽는다.
+        self._not_editable_items.clear()
 
     def remove_item(self, pos: list):
         if not pos:

@@ -9,7 +9,7 @@ CAD 스타일 마우스 인터랙션
 - 더블클릭: 객체 선택 / 빈 공간 클릭 시 선택 해제
 """
 import time
-import vtk
+import vtkmodules.all as vtk
 from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt

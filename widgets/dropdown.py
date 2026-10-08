@@ -1,8 +1,8 @@
 import os
 
-from PySide6.QtCore import Qt, QPropertyAnimation, QSize, QEasingCurve, QAbstractAnimation, QTimer
+from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QAbstractAnimation, QTimer
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy,
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QSizePolicy,
                                QScrollArea, QPushButton, QSpacerItem, QFrame, QApplication)
 
 from nextlib.widgets.icon import create_icon
@@ -72,9 +72,6 @@ class DropDownItemWidget(QWidget):
         self.icon_opened = create_icon(ICON_PATH + '/opened.png')
         self.icon_closed = create_icon(ICON_PATH + '/closed.png')
 
-        self._pending_checked = None
-        self._pending_timer = None
-
         self._initialize(name)
 
     def _initialize(self, name):
@@ -139,32 +136,13 @@ class DropDownItemWidget(QWidget):
         self.animation.setEasingCurve(QEasingCurve.InCubic)
 
     def toggled_button(self, checked):
-        """헤더 버튼 클릭 처리. 더블클릭(체크 가능한 버튼이라 클릭마다 토글되므로
-        두 번째 클릭이 곧바로 반대로 되돌려버려 '열렸다가 바로 닫힘' 깜빡임이 생김)을
-        걸러내기 위해, 실제 반영은 더블클릭 판정 시간만큼 지연시킨다. 그 안에 다음
-        클릭이 들어오면 이번 토글은 통째로 무효화하고 버튼 상태를 원래대로 되돌린다."""
+        """헤더 버튼 클릭 처리. 클릭 즉시 열고/닫는다(지연 없음).
+        (더블클릭 시 아주 짧게 열렸다 닫히는 깜빡임이 있을 수 있지만, 매 클릭마다
+        더블클릭 판정 시간만큼 지연시키는 쪽이 체감상 훨씬 느리고 불편해서 되돌림)"""
         if not self.button:
             return
 
-        self._pending_checked = checked
-
-        if self._pending_timer is not None:
-            # 지연 시간 내에 또 클릭됨 -> 더블클릭으로 보고 이번 토글 전체를 무효화
-            self._pending_timer.stop()
-            self._pending_timer = None
-            self.button.blockSignals(True)
-            self.button.setChecked(self.is_opened)
-            self.button.blockSignals(False)
-            return
-
-        self._pending_timer = QTimer()
-        self._pending_timer.setSingleShot(True)
-        self._pending_timer.timeout.connect(self._apply_pending_toggle)
-        self._pending_timer.start(QApplication.doubleClickInterval())
-
-    def _apply_pending_toggle(self):
-        self._pending_timer = None
-        if self._pending_checked:
+        if checked:
             self.is_opened = True
             self._animate_open()
             if self._scroll_area:
@@ -186,23 +164,22 @@ class DropDownItemWidget(QWidget):
             sb.setValue(item_y)
 
     def open_button(self):
-        self._cancel_pending_toggle()
-        if self.button and not self.button.isChecked():
+        if not self.button:
+            return
+        # 버튼 체크 상태가 아니라 논리 상태(is_opened)를 기준으로 판단한다.
+        # 헤더 클릭 직후(버튼은 이미 체크, 토글은 대기 중)에 불려도 어긋나지 않게 버튼을 맞춘다.
+        self.button.setChecked(True)
+        if not self.is_opened:
             self.is_opened = True
-            self.button.setChecked(True)
             self._animate_open()
 
     def close_button(self):
-        self._cancel_pending_toggle()
-        if self.button and self.button.isChecked():
+        if not self.button:
+            return
+        self.button.setChecked(False)
+        if self.is_opened:
             self.is_opened = False
-            self.button.setChecked(False)
             self._animate_close()
-
-    def _cancel_pending_toggle(self):
-        if self._pending_timer is not None:
-            self._pending_timer.stop()
-            self._pending_timer = None
 
     def _animate_open(self):
         self.button.setIcon(self.icon_opened)
@@ -287,7 +264,7 @@ class DropDown(QWidget):
         sa = getattr(self, 'scroll_area', None)
         item = DropDownItemWidget(title, widget, scroll_area=sa)
         self.item_list.append(item)
-        self._layout.insertWidget(self._layout.count() - 1, item)
+        self._layout.insertWidget(len(self.item_list) - 1, item)
 
     def insert_item(self, index, title='', widget=None):
         sa = getattr(self, 'scroll_area', None)
@@ -328,8 +305,12 @@ class DropDown(QWidget):
             self.item_list[index].close_button()
 
     def scroll_to_item(self, index):
-        """열림/닫힘 상태는 건드리지 않고, 해당 항목을 뷰포트 맨 위로 이동만 시킨다"""
-        self._scroll_item_to_top(index, 0)
+        """열림/닫힘 상태는 건드리지 않고, 해당 항목을 뷰포트 맨 위로 이동만 시킨다.
+        직전에 show_all()/show_only()로 다른 항목들의 visible 상태가 바뀌었을 수 있는데,
+        그 레이아웃 재계산이 끝나기 전에 item.y()를 읽으면 옛 위치로 스크롤돼버린다
+        (특히 대상 항목이 이미 펼쳐진 상태일 때 두드러짐). open_item()과 마찬가지로
+        약간 지연시켜 레이아웃이 안정된 뒤 위치를 읽는다."""
+        self._scroll_item_to_top(index, 20)
 
     def _scroll_item_to_top(self, index, delay):
         if not (0 <= index < len(self.item_list)):
